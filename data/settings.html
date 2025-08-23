@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Watering settings</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div>общие настройки</div>
+		</div>
+		<div class="content">
+			<form action="save_settings" autocomplete="off" method="post" name="settings">
+				<div class="holder">
+					<div class="row">
+						<div class="b">Параметр</div>
+						<div class="b">Значение</div>
+					</div>
+					<div class="one i b center">Общие настройки</div>
+					<div class="row">
+						<div>Название поливалка в локальной сети</div>
+						<div class="nb">http://<input name="str_hostname" type="text" value="water">.local</div>
+					</div>
+					<div class="row">
+						<div>Писать log (журнал событий)</div>
+						<div><input name="sec_enable" type="checkbox" value="1"></div>
+					</div>
+					<div class="one i b center">Настройка времени</div>
+					<div class="row">
+						<div>Временная зона (смещение относительно Гринвича) (от -12 до 12)</div>
+						<div><input name="tz_shift" type="number" value="0"></div>
+					</div>
+					<div class="row">
+						<div>Летнее время</div>
+						<div><input name="tz_dst" type="checkbox" value="1"></div>
+					</div>
+					<div class="row">
+						<div>Периодичность синхронизации ntp. (1-255 часов)</div>
+						<div><input name="sync_time_period" type="number" value="8"></div>
+					</div>
+					<div class="one i b center">Настройка датчика напряжения аккумулятора</div>
+					<div class="row">
+						<div>Показания при 100%, 4.2V</div>
+						<div><input name="high_v" type="number" value="4095"></div>
+					</div>
+					<div class="row">
+						<div>Показания при 0%, 2.8V</div>
+						<div><input name="low_v" type="number" value="2219"></div>
+					</div>
+					<div class="one i b center">Настройка насосов</div>
+					<!-- <div class="row">
+						<div>За сколько миллисекунд набирается 10мл</div>
+						<div><input name="msec_in_ml" type="number" value="1000"></div>
+					</div> -->
+					<div class="row">
+						<div>Одна порция, в миллилитрах, не меньше 10 мл.</div>
+						<div><input name="doze" type="number" value="30"></div>
+					</div>
+					<div class="one i b center">Настройка хаба</div>
+					<div class="row">
+						<div>Имя хаба (без .local)</div>
+						<div><input name="hub_name" type="text" value="clock"></div>
+					</div>
+					<div class="row">
+						<div>PIN доступа к хабу</div>
+						<div><input name="hub_pin" type="text" value=""></div>
+					</div>
+					<div class="row">
+						<div>Периодичность обновления регистрации. (1-255 минут)</div>
+						<div><input name="hub_period" type="number" value="10"></div>
+					</div>
+					<div class="one i b center">Настройка Telegram</div>
+					<div class="one">
+						Bot name/address (начинается с @):
+						<input name="tb_name" type="text" class="long">
+					</div>
+					<div class="one">
+						Chat ID (номера чатов указываются через запятую)
+						<input name="tb_chats" type="text" class="long">
+					</div>
+					<div class="one">
+						Bot token:
+						<input name="tb_token" type="text" class="long">
+					</div>
+					<div class="row">
+						<div>Пароль активации чата</div>
+						<div><input name="tb_secret" type="text" value="" class="m"></div>
+					</div>
+					<div class="row">
+						<div>Период опроса в секундах (0=отключен, только отправка)</div>
+						<div><input name="tb_rate" type="number" value="300"></div>
+					</div>
+					<div class="row">
+						<div>Ускоренный период опроса, после получения нового сообщения, в секундах (1-600)</div>
+						<div><input name="tb_accelerated" type="number" value="10"></div>
+					</div>
+					<div class="row">
+						<div>Время ускорения опроса, после получения нового сообщения, в секундах (1-3600)</div>
+						<div><input name="tb_accelerate" type="number" value="900"></div>
+					</div>
+					<div class="row">
+						<div>Время прекращения новых опросов после сбоя, в секундах (900-3600)</div>
+						<div><input name="tb_ban" type="number" value="1800"></div>
+					</div>
+					<div class="one i b center">Настройка SMS</div>
+					<div class="row">
+						<div>Отправлять SMS вместо telegram</div>
+						<div><input name="sms_use" type="checkbox" value="1"></div>
+					</div>
+					<div class="row">
+						<div>Номер телефона, куда слать sms</div>
+						<div><input name="sms_phone" type="text" value="" class="long"></div>
+					</div>
+					<div class="one i b center">Доступ к настройкам</div>
+					<div class="row">
+						<div>login</div>
+						<div><input name="web_login" type="text" value="" class="m" oninput="calcLen(3,20)" id="in3"></div>
+					</div>
+					<div class="row">
+						<div>password</div>
+						<div><input name="web_password" type="text" value="" class="m" oninput="calcLen(4,30)" id="in4"></div>
+					</div>
+				</div>
+				<button>Сохранить</button>
+			</form>
+		</div>
+		<div class="footer">
+			<a href="maintenance.html">Вернуться</a>
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+		fill_settings("config.json","settings", () => {
+			$g("shadow").style.display = "none";
+		});
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>

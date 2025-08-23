@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Pump calibrating</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div>калибровка насосов</div>
+		</div>
+		        <div class="content">
+			<form action="save_pump" autocomplete="off" method="post" name="settings">
+				<div class="holder">
+					<div class="row">
+						<div>Номер насоса для тестирования</div>
+						<div><input name="pump" type="number" value="1"></div>
+					</div>
+					<div class="one b center">Шаг 1</div>
+					<div class="row">
+						<div>Вес пустой тары (сухой)</div>
+						<div><input name="tara" type="number" step="0.01" value="10.5" onchange="calc()" onkeyup="calc()"></div>
+					</div>
+					<div class="row">
+						<div>Время первого теста в секундах</div>
+						<div><input name="sec1" type="number" value="5" class="ss" onchange="toSt2()" onkeyup="toSt2()"></div>
+						<div><button onclick="test(1); return false;" style="min-width: 6em;">Тест 1</button></div>
+					</div>
+					<div class="row">
+						<div>Вес воды в граммах</div>
+						<div><input name="weight1" type="number" value="50" step="0.01" onchange="calc()" onkeyup="calc()"></div>
+					</div>
+					<div class="one b center">Шаг 2</div>
+					<div class="row">
+						<div>Время второго теста в секундах</div>
+						<div><input name="sec2" type="number" class="ss" disabled></div>
+						<div><button onclick="test(2); return false;" style="min-width: 6em;">Тест 2</button></div>
+					</div>
+					<div class="row">
+						<div>Вес воды в граммах</div>
+						<div><input name="weight2" type="number" value="100" step="0.01" onchange="calc()" onkeyup="calc()"></div>
+					</div>
+					<div class="one b center">Результат</div>
+					<div class="row">
+						<div>Один грамм наливается за</div>
+						<div><input name="in_ms" type="hidden"><span id="in_ms"></span> ms</div>
+					</div>
+					<div class="row">
+						<div>Время наполнения подводящей трубки</div>
+						<div><input name="empty_ms" type="hidden"><span id="empty_ms"></span> ms</div>
+					</div>
+                </div>
+                <button>Сохранить</button>
+            </form>
+			<div class="holder">
+				При калибровке вычисляется два параметра: производительность насоса и время наполнения подводящей трубки.
+				Для этого надо произвести два замера. С меньшим количеством воды и с в два раза большим количеством воды.<br>	
+				Надо замерить вес пустого стаканчика (тара).<br>
+				После нажатия на кнопку "Тест 1", насос включится и что-то наберёт. Взвесить воду, которая набралась в стаканчик,
+				вписать вес в первое поле результата. Вылить воду.<br>
+				Провести аналогичный получить вес воды для "Тест 2", вписать результат.<br>
+				Только после этого нажать "Сохранить". Иначе результат буде непредсказуемым.
+			</div>
+        </div>
+        <div class=""></div>
+		<div class="footer">
+			<a href="maintenance.html">Вернуться</a>
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+function toSt2() {
+	const sec = parseInt(document.forms["settings"].elements["sec1"].value, 10);
+	if( isNaN(sec) ) document.forms["settings"].elements["sec2"].value = "";
+	else document.forms["settings"].elements["sec2"].value = sec * 2;
+	calc();
+}
+function real_calc() {
+	const tara = parseFloat(document.forms["settings"].elements["tara"].value, 10);
+	const weight1 = parseFloat(document.forms["settings"].elements["weight1"].value, 10);
+	const weight2 = parseFloat(document.forms["settings"].elements["weight2"].value, 10);
+	if( isNaN(weight1) || isNaN(weight2) || isNaN(tara) ) return false;
+	if( (weight1-tara)*2>weight2-tara ) return false;
+	const sec = parseInt(document.forms["settings"].elements["sec1"].value, 10);
+	if( isNaN(sec) ) return false;
+	let ev = (weight2-tara)-(weight1-tara)*2;
+	let gt = Math.round((Math.abs(sec) * 1000)/(weight1 - tara + ev));
+	let et = Math.round(gt * ev * 1.5);
+	document.forms["settings"].elements["in_ms"].value = gt;
+	$g("in_ms").innerHTML = gt;
+	document.forms["settings"].elements["empty_ms"].value = et;
+	$g("empty_ms").innerHTML = et;
+	return true;
+}
+function calc() {
+	if( ! real_calc() ) {
+		document.forms["settings"].elements["in_ms"].value = 0;
+		$g("in_ms").innerHTML = 0;
+		document.forms["settings"].elements["empty_ms"].value = 0;
+		$g("empty_ms").innerHTML = 0;
+	}
+}
+function test(tn) {
+	if( tn != 1 && tn != 2 ) return;
+	const pump = parseInt(document.forms["settings"].elements["pump"].value, 10);
+	const sec = parseInt(document.forms["settings"].elements["sec"+tn].value, 10);
+	if( isNaN(sec) || isNaN(pump) ) return;
+	ajaxRequest("pump_on", "POST", "pump="+Math.abs(pump)+"&sec="+Math.abs(sec), dummy, dummy);
+}
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+        fill_settings("pump.json","settings", () => {
+			toSt2();
+			calc();
+		    $g("shadow").style.display = "none";
+        });
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>

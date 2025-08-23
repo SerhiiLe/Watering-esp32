@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Watering machine home page</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div id="hostname"></div>
+		</div>
+		<div class="holder narrow menu">
+			<fieldset style="margin-bottom: 1em;">
+				<legend>Основная информация</legend>
+				<div id="pp"></div>
+				<div class="row">
+					<div>Количество порций за раз</div>
+					<div><input type="number" min="1" max="255" name="count" id="count" value="1"></div>
+				</div>
+				<a href="#" onclick="pump_all(); return false;">Полить все (<span id="pumpA"></span>)</a>
+				<div>Расход воды: <span id="sum">--</span>л</div>
+			</fieldset>
+		</div>
+		<div class="menu">
+			<!-- a href="alarms.html">Расписание</a -->
+			<a href="maintenance.html">Настройки</a>
+			<a href="help.html">Справка</a>
+			<a href="logout" id="is_auth">Выход</a>
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+var fl_need_refresh = false;
+var pump_count = 0;
+function pump_on(n) {
+	var count = $g("count").value;
+	if(count<0 || count >255) count = 1;
+	ajaxRequest("pump_on", "POST", "pump="+n+"&cnt="+count, function(ajaxResp) {
+		var info = $g("pump"+n);
+		if( info ) info.innerHTML = ajaxResp.responseText == "1" ? "On": "Off";
+		if( ! fl_need_refresh ) {
+			fl_need_refresh = true;
+			setTimeout(update_view, 1000);
+		}
+	}, dummy);
+}
+function pump_all() {
+	for(var i=0; i<pump_count; i++) pump_on(i+1);
+	$g("pumpA").innerHTML = "On";
+}
+function update_view(cbfunc=null) {
+	ajaxRequest("full_status", "GET", null, function(ajaxResp) {
+		var fl_pump_on = false;
+		var doc = JSON.parse(ajaxResp.responseText);
+		var pp = $g("pp");
+		if(pp) {
+			if(doc.pumps) {
+				pump_count = doc.pumps.length;
+				for(i=0;i<pump_count;i++) {
+					var t = $g("pp"+i);
+					if(!t) {
+						pp.appendChild($em("div",[
+							$ee("div","Насос "+(i+1),{class:"b"}),
+							$em("div",[
+								$em("span",["объём: ",$e("span",{id:"con"+i}),"л,"],{class:"nb"})," ",
+								$em("span",["включений: ",$e("span",{id:"cnt"+i}),","],{class:"nb"})," ",
+								$em("span",["последнее: ",$e("span",{id:"last"+i})],{class:"nb"})
+							]),
+							$em("a",["Полить (",$e("span",{id:"pump"+i}),")"],{href:"#",onclick:"pump_on("+(i+1)+"); return false;"})
+						],{id:"pp"+i}));
+					}
+					$g("con"+i).innerHTML = doc.pumps[i].con;
+					$g("cnt"+i).innerHTML = doc.pumps[i].cnt;
+					$g("last"+i).innerHTML = doc.pumps[i].last;
+					if(doc.pumps[i].pump == 1) {
+						fl_pump_on = true;
+						$g("pump"+i).innerHTML = "On";
+					} else
+						$g("pump"+i).innerHTML = "Off";
+				}
+			}
+			if(doc.sensors) {
+				for(i=0;i<doc.sensors.length;i++) {
+					var t = $g("moi"+i);
+					if(!t) {
+						pp.appendChild($em("div",["Влажность "+(i+1)+": ",$e("span",{id:"moi"+i}),"%"],{class:"b"}));
+					}
+					$g("moi"+i).innerHTML = doc.sensors[i];
+				}
+			}
+		}
+		for(var key in doc) {
+			var t = $g(key);
+			if(!t) continue;
+			if( key == "is_auth" ) {
+				t.style.display = doc[key] == 1 ? "block": "none";
+			} else if( key == "hostname" ) {
+				t.innerHTML = "<a href='http://"+doc[key]+".local/'>"+doc[key]+".local</a>";
+			} else
+				t.innerHTML = doc[key];
+		}
+		var t = $g("pumpA");
+		if(t) t.innerHTML = fl_pump_on ? "On": "Off";
+		if( fl_pump_on ) setTimeout(update_view, 1000);
+		else fl_need_refresh = false;
+		var sum = 0.0;
+		for(var i=0; i<pump_count; i++) sum += parseFloat($g("con"+i).innerHTML);
+		$g("sum").innerHTML = sum.toFixed(2);
+		if(cbfunc !== null) cbfunc();
+	}, dummy);
+}
+function new_info() {
+	setTimeout(update_view, 5000, new_info);
+}
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+		update_view( () => { new_info(); } );
+		$g("shadow").style.display = "none";
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>

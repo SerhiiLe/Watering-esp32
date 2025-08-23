@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Watering machine scheduler</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div>Расписание полива</div>
+		</div>
+		<div class="content">
+ 			<table class="params" id="list">
+				<thead>
+					<tr>
+						<th>Время</th>
+						<th>Вкл.</th>
+					</tr>
+				</thead>
+				<tbody id="list_items">
+				</tbody>
+			</table>
+			<div id="edit" style="display:none;">
+				<form action="scheduler_save" autocomplete="off" method="post" name="settings">
+					<input type="hidden" name="target" value="0">
+					<div class="holder narrow">
+						<div class="row">
+							<div>Время начала <span class="small">(00:00 - сразу)</span></div>
+							<div><input type="time" name="time" value="00:00" class="bbig"></div>
+						</div>
+						<div class="row">
+							<div>Интервал повтора <span class="small">(00:00 - сутки)</span></div>
+							<div><input type="time" name="repeat" value="00:00" class="big"></div>
+						</div>
+						<div class="row">
+							<div>Условия</div>
+							<div>
+								<select name="mode" id="mode" onchange="select_conditions()">
+									<option value="0">без условий</option>
+									<option value="1">если влажность меньше</option>
+									<option value="2">если влажность больше</option>
+								</select>
+							</div>
+						</div>
+						<div class="row conditions">
+							<div>
+								<select name="sensor" id="sensor">
+									<option value="0">Среднее</option>
+								</select>
+							</div>
+						</div>
+						<div class="row conditions">
+							<div>Значение влажности</div>
+							<div><input name="moi" type="number" value="60">%</div>
+						</div>
+						<div class="row">
+							<div>Количество порций</div>
+							<div><input name="por" type="number" value="1"></div>
+						</div>
+						<fieldset style="margin-bottom: 1em;" id="pumps">
+							<legend>Насосы</legend>
+						</fieldset>
+					</div>
+					<button>Сохранить</button>
+				</form>
+			</div>
+		</div>
+		<div class="footer">
+			<a href="maintenance.html" id="return">Вернуться</a>
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+function select_conditions() {
+	switch($g("mode").value) {
+		case "0":
+			toggle_by_class("conditions",false);
+			break;
+		case "1":
+		case "2":
+			toggle_by_class("conditions",true);
+	}
+}
+function show_edit(i) {
+	// if(! $g("e"+i).checked) return;
+	const f = document.forms["settings"];
+	const d = doc.data; 
+	f.elements["target"].value = i;
+	f.elements["time"].value = print_time(d[i].t);
+	f.elements["repeat"].value = print_time(d[i].r);
+	var t = (d[i].cm >> 5) & 3;
+	f.elements["mode"].selectedIndex = t;
+	select_conditions();
+	t = d[i].cm & 31;
+	f.elements["sensor"].selectedIndex = t;
+	f.elements["moi"].value = d[i].cv;
+	f.elements["por"].value = d[i].p;
+	var bit = 1;
+	for(t=0; t<doc.pc; t++) {
+		if(d[i].s & bit) f.elements["pump"+t].checked = true;
+		else f.elements["pump"+t].checked = false;
+		bit = bit << 1;
+	}
+	$g("return").setAttribute("onclick","ret();return false;");
+	$g("list").style.display = "none";
+	$g("edit").style.display = "block";
+}
+
+function print_time(i) {
+	var h = Math.floor(i / 60);
+	var m = i % 60;
+	return (h<10?"0"+h:h)+":"+(m<10?"0"+m:m);
+}
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+		ajaxRequest("scheduler.json", "GET", null, function(ajaxResp) {
+			doc = JSON.parse(ajaxResp.responseText);
+			const d = doc.data;
+			const li = $g("list_items");
+			for(var i=0; i<d.length; i++) {
+				const sp1 = $ee("span",print_time(d[i].t),{class:"big"});
+				const sp2 = $em("span",[" ",d[i].r ? print_time(d[i].r): "1 день"],{class:"small"});
+				if( d[i].p > 1 ) sp2.innerHTML += " x" + d[i].p;
+				const sp3 = $e("div",{class:"small top_line"});
+				if(d[i].s == 7) {
+					sp3.innerHTML = "Все";
+				} else if(d[i].s) {
+					var bit = 1;
+					for(var t=0; t<doc.pc; t++) {
+						if(d[i].s & bit) sp3.innerHTML += " p"+(t+1);
+						bit = bit << 1;
+					}
+				}
+				if(d[i].cm & 96) {
+					sp3.innerHTML += " если ";
+					let t = d[i].cm & 7;
+					sp3.innerHTML += " " + (t==0?"среднее":"s"+(t)) + (((d[i].cm >> 5) & 3) == 1 ? " < ": " > ") + d[i].cv + "%";
+				}
+				let fl = d[i].cm & (1<<7);
+				const td1 = $em("td",[sp1,sp2,sp3],{class:(fl?"on":"off"),id:"t"+i,onclick:"show_edit("+i+")"});
+				const input = $e("input",{type:"checkbox",id:"e"+i,onchange:"toggle_edit("+i+",'scheduler_off')"});
+				if(fl) input.checked = true;
+				li.appendChild($em("tr",[td1,$ee("td",input)]));
+			}
+			const s = $g("sensor");
+			if(s) for(var i=0; i<doc.sc; i++) s.appendChild($ee("option","Датчик "+(i+1),{value:i+1}));
+			const p = $g("pumps");
+			if(p) for(var i=0; i<doc.pc; i++) p.appendChild($em("div",[
+				$ee("div",i+1),
+				$ee("div",$e("input",{type:"checkbox",name:"pump"+i,value:1}))
+			],{class:"row"}));
+
+			$g("shadow").style.display = "none";
+		}, dummy);
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>

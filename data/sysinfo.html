@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Watering machine system information</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div>Системная информация</div>
+		</div>
+		<div class="content">
+			<div class="holder narrow">
+				<div class="row">
+					<div>Uptime</div>
+					<div id="Uptime"></div>
+				</div>
+				<div class="row">
+					<div>Time</div>
+					<div id="DateTime"></div>
+				</div>
+				<div class="row">
+					<div>Power</div>
+					<div id="fl_5v"></div>
+				</div>
+				<div class="row">
+					<div>Battery</div>
+					<div><span id="Battery"></span>% (<span id="Battery_raw"></span>)</div>
+				</div>
+				<div class="row">
+					<div>WiFi RSSI</div>
+					<div id="Rssi"></div>
+				</div>
+				<div class="row">
+					<div>IP</div>
+					<div id="IP"></div>
+				</div>
+				<div class="row">
+					<div>GSM info</div>
+					<div id="gsm_info"></div>
+				</div>
+				<div class="row">
+					<div>GSM signal</div>
+					<div><span id="gsm_rssi"></span>% (status: <span id="gsm_status"></span>)</div>
+				</div>
+				<div class="row">
+					<div>Free Heap</div>
+					<div id="FreeHeap"></div>
+				</div>
+				<div class="row">
+					<div>Max Free Block Size</div>
+					<div id="MaxFreeBlockSize"></div>
+				</div>
+				<div class="row">
+					<div>Heap Fragmentation</div>
+					<div id="HeapFragmentation"></div>
+				</div>
+				<div class="row">
+					<div>Cpu Freq</div>
+					<div id="CpuFreqMHz"></div>
+				</div>
+				<div class="row">
+					<div>Reset Reason</div>
+					<div id="ResetReason"></div>
+				</div>
+				<div class="row">
+					<div>Build time</div>
+					<div id="BuildTime"></div>
+				</div>
+				<div class="row">
+					<div>Platform Version</div>
+					<div id="FullVersion"></div>
+				</div>
+				<div class="one i center">
+					<label for="update" i18="si_auto">обновлять автоматически</label> <input type="checkbox" name="update" id="update" onchange="auto_update()">
+				</div>
+			</div>
+
+			<button onclick="getInfo()">Обновить</button>
+		</div>
+		<div class="footer">
+			<a href="maintenance.html">Вернуться</a>
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+function parseInfo(doc) {
+	for (var key in doc) {
+		var t = $g(key);
+		if(!t) continue;
+		switch(key) {
+			case "Uptime": t.innerHTML = doc[key].replace(/,/g, "<br>"); break;
+			case "Time": t.innerHTML = doc[key].replace(/(\d+)\D(\d+)/g, "$1:$2"); break;
+			case "fl_5v": t.innerHTML = doc[key] ? "Main": "Reserve"; break;
+			case "FullVersion": t.innerHTML = doc[key].replace(/\//g, "<br>"); break;
+			default: t.innerHTML = doc[key];
+		}
+	}
+}
+var fl_update = false;
+function getInfo(cbfunc=null) {
+	ajaxRequest("sysinfo","GET",null, function(ajaxResp) {
+		parseInfo(JSON.parse(ajaxResp.responseText));
+		if(cbfunc !== null) cbfunc();
+	}, dummy);
+}
+function new_info() {
+	if( fl_update ) setTimeout(getInfo, 1000, new_info);
+}
+function auto_update() {
+	if($g("update").checked) {
+		fl_update = true;
+		getInfo( new_info );
+	} else
+		fl_update = false; 
+}
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+		getInfo( () => {
+			$g("shadow").style.display = "none";
+		});
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>

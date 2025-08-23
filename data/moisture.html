@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Maintenance watering</title>
+		<style>
+			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
+			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
+		</style>
+		<meta name="theme-color" content="#ffffff">
+		<link rel="stylesheet" href="styles.css">
+		<link rel="manifest" href="site.webmanifest">
+		<link rel="icon" href="favicon.ico">
+		<link rel="shortcut icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="apple-touch-icon" href="apple-touch-icon.png">
+		<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+		<script src="functions.js" type="text/javascript" encoding="UTF-8"></script>
+	</head>
+	<body>
+		<div class="head">
+			Watering machine
+			<div>калибровка датчика влажности</div>
+		</div>
+        <div class="content">
+			<form action="save_moisture" autocomplete="off" method="post" name="settings">
+				<div id="holder"></div>
+                <button>Сохранить</button>
+            </form>
+        </div>
+        <div class=""></div>
+		<div class="footer">
+			<a href="maintenance.html">Вернуться</a>
+		</div>
+		<div class="holder">
+			Для калибровки сначала надо взять полностью сухой, чистый датчик, подключить и записать показания "сухого" (около 2500).<br>
+			Затем опустить датчик в воду примерно до метки (5-10 мм до метки) и записать показания как полностью "погруженного" (около 950).<br>
+			Записывать показания сразу после измерения, в результате должны правильно отображаться показания влажности в процентах.
+		</div>
+		<div id="shadow"><div>Загрузка...</div></div>
+	</body>
+<script type="text/javascript" encoding="UTF-8">
+function parseInfo(doc) {
+	// for(var i=0; i<doc.length; i++) {
+
+	// }
+	for(var key in doc) {
+		var t = $g(key);
+		if(!t) continue;
+		t.innerHTML = doc[key];
+	}
+}
+function getInfo(cbfunc=null) {
+	ajaxRequest("moisture","GET",null, function(ajaxResp) {
+		parseInfo(JSON.parse(ajaxResp.responseText));
+		if(cbfunc !== null) cbfunc();
+	}, dummy);
+}
+function new_info() {
+	setTimeout(getInfo, 1000, new_info);
+}
+var s_count = 0;
+function start() {
+	if (typeof ajaxRequest !== "undefined") {
+		ajaxRequest("moisture.json", "GET", null, function(ajaxResp) {
+			var doc = JSON.parse(ajaxResp.responseText);
+			var f = document.forms["settings"];
+			var holder = $g("holder");
+			if(holder&&f) {
+				s_count = doc.length;
+				for(var i=0; i<doc.length; i++) {
+					var t = $g("raw"+i);
+					if(!t) {
+						holder.appendChild($em("fieldset",[
+							$ee("legend","Датчик "+(i+1),{class:"i b"}),
+							$em("div",[
+								$ee("div","Текущее сырое значение"),
+								$ee("div",$e("span",{id:"raw"+i}))
+							],{class:"row"}),
+							$em("div",[
+								$ee("div","Текущее значение"),
+								$ee("div",$e("span",{id:"per"+i}))
+							],{class:"row"}),
+							$em("div",[
+								$ee("div","Значение полностью сухого датчика (0%)"),
+								$ee("div",$e("input",{name:"moi0_"+i,type:"number",value:""}))
+							],{class:"row"}),
+							$em("div",[
+								$ee("div","Значение полностью погруженного датчика (100%)"),
+								$ee("div",$e("input",{name:"moi100_"+i,type:"number",value:""}))
+							],{class:"row"})
+						],{class:"holder",style:"margin-bottom: 1em;"}));
+					}
+					f.elements["moi0_"+i].value = doc[i].moi0;
+					f.elements["moi100_"+i].value = doc[i].moi100;
+				}
+			}
+			getInfo( () => { setTimeout(getInfo, 1000, new_info); } );
+		    $g("shadow").style.display = "none";
+        }, dummy);
+	} else setTimeout(start, 100);
+}
+start();
+</script>
+</html>
