@@ -58,10 +58,10 @@ Machine for watering several flowers. Autonomous, but with a WEB interface and s
 ## Фотографии
 
 Общий вид с тазиком:  
-[!общий вид](https://github.com/SerhiiLe/Watering-esp32/blob/main/PXL_20250720_080338035.jpg)
+![общий вид](https://github.com/SerhiiLe/Watering-esp32/blob/main/PXL_20250720_080338035.jpg)
 
 Вид на плату, рядом с разъёмами распаяно "реле", но полевых транзисторах, но они smd и с другой стороны платы.
-[!плата](https://github.com/SerhiiLe/Watering-esp32/blob/main/PXL_20250720_080514097.jpg)
+![плата](https://github.com/SerhiiLe/Watering-esp32/blob/main/PXL_20250720_080514097.jpg)
 
 ## Планы
 
