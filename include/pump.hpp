@@ -1,5 +1,5 @@
-#ifndef POMP_H
-#define POMP_H
+#ifndef PUMP_HPP
+#define PUMP_HPP
 
 #include <Arduino.h>
 #include "ntp.h"

@@ -86,13 +86,17 @@ struct Scheduler_State {
 };
 extern Scheduler_State scheduler[];
 
+struct Average {
+	uint16_t raw = 0; // текущая влажность
+	uint8_t per = 0; // текущая влажность в процентах
+	uint32_t sum = 0; // накопитель для вычисления среднего значения влажности
+};
+extern Average moi[];
+extern Average battery;
+
 extern esp_chip_info_t chip_info;
 extern bool fs_isStarted;
 extern bool fl_5v;
-extern uint8_t battery;
-extern uint16_t battery_raw;
-extern uint16_t moi_raw[];
-extern uint8_t moi_per[];
 extern bool wifi_isConnected;
 extern bool wifi_isPortal;
 extern bool fl_timeNotSync;
@@ -108,16 +112,22 @@ struct GSM_Info {
 };
 extern GSM_Info gsm;
 
+#define PUMPS sizeof(pumpPIN) // количество помп
+#ifdef USE_MOISTURE_SENSORS
+#define SENSORS sizeof(sensorPIN) // количество сенсоров
+#else
+#define SENSORS 0
+#endif
 
 //----------------------------------------------------
 
-#include "timerMinim.h"
+#include "timerMinim.hpp"
 
 extern timerMinim ntpSyncTimer;
 extern timerMinim hubRegTimer;
 extern timerMinim telegramTimer;
 
-#include "blinkMinim.h"
+#include "blinkMinim.hpp"
 
 extern blinkMinim led;
 

@@ -1,8 +1,8 @@
 /*
 	Отображение разных реакций через мигание светодиодов
 */
-#ifndef BLINK_MINIM_H
-#define BLINK_MINIM_H
+#ifndef BLINK_MINIM_HPP
+#define BLINK_MINIM_HPP
 
 #ifndef ON
 #define ON 1

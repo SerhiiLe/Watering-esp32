@@ -1,5 +1,5 @@
-#ifndef timerMinim_h
-#define timerMinim_h
+#ifndef timerMinim_hpp
+#define timerMinim_hpp
 
 #include <Arduino.h>
 

@@ -9,7 +9,7 @@
 #include "defines.h"
 #include "settings.h"
 #include "ntp.h"
-#include "pump.h"
+#include "pump.hpp"
 
 Global_Settings gs; // определение структуры глобальной (главной) конфигурации
 Moisture_Calibrate mc[SENSORS]; // калибровка датчиков влажности

@@ -17,8 +17,8 @@
 #include "ntp.h"
 #include "wifi_init.h"
 #include "slave.h"
-#include "blinkMinim.h"
-#include "pump.h"
+#include "blinkMinim.hpp"
+#include "pump.hpp"
 
 #define HPP(txt, ...) HTTP.client().printf(txt, __VA_ARGS__)
 
@@ -545,13 +545,15 @@ void sysinfo() {
 	HPP("\"Uptime\":\"%s\",", getUptime(buf));
 	HPP("\"DateTime\":\"%s\",", getTimeDate(buf));
 	HPP("\"fl_5v\":%i,", fl_5v);
-	HPP("\"Battery\":%u,", battery);
-	HPP("\"Battery_raw\":%u,", battery_raw);
+	HPP("\"Battery\":%u,", battery.per);
+	HPP("\"Battery_raw\":%u,", battery.raw);
 	HPP("\"Rssi\":%i,", wifi_rssi());
 	HPP("\"IP\":\"%s\",", wifi_currentIP().c_str());
+	#ifdef USE_GSM
 	HPP("\"gsm_info\":\"%s\",", gsm.info.c_str());
 	HPP("\"gsm_rssi\":\"%i\",", map(gsm.rssi, 0, 32, 0, 100));
 	HPP("\"gsm_status\":\"%i\",", gsm.isSleep ? -10: gsm.status);
+	#endif
 	HPP("\"FreeHeap\":%i,", ESP.getFreeHeap());
 	HPP("\"MaxFreeBlockSize\":%i,", ESP.getMaxAllocHeap());
 	HPP("\"HeapFragmentation\":%i,", 100-ESP.getMaxAllocHeap()*100/ESP.getFreeHeap());
@@ -566,8 +568,8 @@ void moisture() {
 	if(is_no_auth()) return;
 	HTTP.client().print("HTTP/1.1 200\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{");
 	for(uint8_t i=0; i<SENSORS; i++) {
-		HPP("\"raw%u\":%u,", i, moi_raw[i]);
-		HPP("\"per%u\":%u%s", i, moi_per[i], i+1<SENSORS ? ",":"}");
+		HPP("\"raw%u\":%u,", i, moi[i].raw);
+		HPP("\"per%u\":%u%s", i, moi[i].per, i+1<SENSORS ? ",":"}");
 	}
 }
 
@@ -717,7 +719,7 @@ void full_status() {
 	}
 	HTTP.client().print("],\"sensors\":[");
 	for(uint8_t i=0; i<SENSORS; i++) {
-		HPP("%u%s",moi_per[i], i+1<SENSORS ? ",":"");
+		HPP("%u%s",moi[i].per, i+1<SENSORS ? ",":"");
 	}
 	HTTP.client().print("]}");
 
@@ -880,7 +882,9 @@ void api() {
 							sum += ps[i].vol;
 						}
 						PP("sum: %.2f liter\n", sum);
-						PP("s1: %u%%, s2: %u%%\n", moi_per[0], moi_per[1]);
+						for(uint8_t i=0; i<SENSORS; i++) {
+							PP("s%u: %u%%\n", i+1, moi[i].per);
+						}
 						PP("bat: %u%%", battery);
 
 						// PP("\nmode: %s", on_off(gs.sec_enable));

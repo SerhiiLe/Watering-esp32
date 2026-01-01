@@ -6,23 +6,30 @@
 #include <LittleFS.h>
 #include "defines.h"
 #include "settings.h"
+#ifdef PIN_BUTTON 
 #include <EncButton.h> // https://github.com/GyverLibs/EncButton
+#endif
 #include "wifi_init.h"
-#include "blinkMinim.h"
 #include "ntp.h"
 #include "web.h"
 #include "slave.h"
 #include "ftp.h"
-#include "pump.h"
+#include "pump.hpp"
 #include "gsm.h"
-
-touch_value_t last_touch;
 
 PumpWater p[PUMPS]; // управление насосами
 Pump_Queue pq[PUMPS]; // очередь заданий на запуск насосов
 Pump_State ps[PUMPS]; // состояние насосов и статистика
 
-VirtButton btn;
+#ifdef PIN_BUTTON
+	#if BUTTON_TYPE == 2
+		VirtButton btn;
+	#elif BUTTON_TYPE == 1
+		Button btn(PIN_BUTTON, INPUT, LOW); // комбинация для сенсорной кнопки
+	#else
+		Button btn(PIN_BUTTON); // комбинация для обычной кнопки
+	#endif
+#endif
 
 blinkMinim led(PIN_LED, LOW);
 
@@ -40,15 +47,14 @@ bool fl_password_reset_req = false;
 // флаг наличия питания
 bool fl_5v = true;
 // напряжение на аккумуляторе
-uint8_t battery = 0;
-uint16_t battery_raw = 0;
-// текущая влажность
-uint16_t moi_raw[SENSORS] = {0};
-// текущая влажность в процентах
-uint8_t moi_per[SENSORS] = {0};
-// накопитель для вычисления среднего значения влажности
-uint32_t moi_tmp[SENSORS] = {0};
-// счётчик пройденных циклов чтения влажности
+Average battery;
+// влажность
+#ifdef USE_MOISTURE_SENSORS
+	Average moi[SENSORS];
+#else
+	Average moi[1];
+#endif
+// счётчик пройденных циклов чтения влажности / батареи
 uint16_t moi_count = 0;
 // текущая минута
 int a_minute = -1;
@@ -120,7 +126,7 @@ void setup() {
 
 	// инициализация насосов
 	for(uint8_t i=0; i<PUMPS; i++) {
-		if( pumpPIN[i] <= 200 ) // реле подключено непосредственно к пину
+		if( pumpPIN[i] < 200 ) // реле подключено непосредственно к пину
 			p[i].begin(pumpPIN[i], RELAY_LEVEL);
 		else // заготовка, реле подключено через, к примеру, через сдвиговый регистр. надо указать функции работы с pin реле
 			p[i].begin(pumpPIN[i]-200, RELAY_LEVEL, digitalWrite, digitalRead);
@@ -128,11 +134,10 @@ void setup() {
 
 	pinMode(PIN_5V, INPUT);
 
-	last_touch = touchRead(PIN_BUTTON);
-
 	// инициализация подключения к wifi (в фоновом режиме)
 	wifi_setup();
 
+	#ifdef USE_GSM
 	// Start the connection task
 	xTaskCreatePinnedToCore(
 		TaskGSMCode,         /* Function to implement the task */
@@ -142,16 +147,48 @@ void setup() {
 		0,                   /* Priority of the task */
 		&gsmTaskHandle,      /* Task handle. */
 		0);                  /* Core where the task should run */
+	#endif
 }
+
+// накопление значений влажности и аккумулятора. Для уменьшение шума аналоговых датчиков
+void sensors_update() {
+	for(uint8_t i=0; i<SENSORS; i++) moi[i].sum += analogRead(sensorPIN[i]);
+	moi_count++;
+	#ifdef PIN_BAT
+	battery.sum += analogRead(PIN_BAT);
+	#endif
+}
+
+void sensors_calc() {
+	// датчик влажности
+	for(uint8_t i=0; i<SENSORS; i++) {
+		moi[i].raw = moi[i].sum/moi_count;
+		moi[i].sum = 0;
+		moi[i].per = map(moi[i].raw, mc[i].moi0, mc[i].moi100, 0, 100);
+		moi[i].per = constrain(moi[i].per, 0, 100);
+	}
+	// вычисление заряда батареи
+	#ifdef PIN_BAT
+		if( moi_count == 0 ) sensors_update();
+		battery.raw = battery.sum/moi_count;
+		uint16_t t_bat = constrain(battery.raw, gs.low_v, gs.high_v);
+		uint16_t half = (gs.high_v - gs.low_v) / 2 + gs.low_v;
+		if( t_bat > half )
+			battery.per = map(t_bat, half, gs.high_v, 20, 100);
+		else
+			battery.per = map(t_bat, gs.low_v, half, 0, 20);
+		battery.sum = 0;
+	#endif
+
+	moi_count = 0;
+}
+
 
 void loop() {
   	// put your main code here, to run repeatedly:
 
 	// if( blink.isReady() ) digitalWrite(LED, !digitalRead(LED));
 	led.tick();
-
-	// текущее состояние сенсорной кнопки (виртуальная кнопка)
-	btn.tick(touchRead(PIN_BUTTON) < TOUCH_THRESHOLD ? true: false);
 
 	// текущее состояние насосов
 	for(uint8_t i=0; i<PUMPS; i++) p[i].tick();
@@ -169,6 +206,21 @@ void loop() {
 		web_process();
 		if(hubRegTimer.isReady()) registration_dev();
 	}
+
+	#ifdef PIN_BUTTON
+	#if BUTTON_TYPE == 2
+	// текущее состояние сенсорной кнопки (виртуальная кнопка)
+	btn.tick(touchRead(PIN_BUTTON) < TOUCH_THRESHOLD ? true: false);
+	// Показывает значение touch для калибровки. Нужно только на этапе отладки
+	// static touch_value_t last_touch;
+	// touch_value_t new_touch = touchRead(PIN_BUTTON);
+	// if( new_touch != last_touch ) {
+	// 	Serial.printf("touch value = %u\n", last_touch);
+	// 	last_touch = new_touch;
+	// }
+	#else
+	btn.tick();
+	#endif
 
 	if( btn.hold() ) {
 		LOG(println, "touch button is hold");
@@ -220,48 +272,29 @@ void loop() {
 				break;
 		}
 	}
+	#endif
+
+	// накопление значений влажности и аккумулятора. Для уменьшение шума аналоговых датчиков
+	sensors_update();
 
 	if(digitalRead(PIN_5V) != fl_5v) {
 		delay(50); // проверка на случайную помеху. Резисторы стоят сильно большие и случайные наводки могут давать сбой логики.
 		if(digitalRead(PIN_5V) != fl_5v) {
 			fl_5v = ! fl_5v;
 			// отослать sms об изменении состояния питания
-			gsm_sendSMS(fl_5v ? String("Power is ON :) b:") + battery + "%": String("Power is OFF :( b:") + battery + "%");
-			// if(sec_enable) save_log_file(fl_5v ? SEC_TEXT_POWERED: SEC_TEXT_POWEROFF);
-			// fl_allowLEDS = fl_5v;
-			// если нет питания - отключить питание матрицы и снизить яркость на минимум
-			// if(!fl_5v) {
-				// set_brightness(1);
-				// old_brightness = 1;
-			// } else {
-				// digitalWrite(PIN_RELAY, RELAY_OFF);
-				// if(gs.bright_mode==2) set_brightness(gs.bright0);
-			// }
+			if( battery.per == 0 ) sensors_calc();
+			if( battery.per )
+				gsm_sendSMS(fl_5v ? String("Power is ON :) b:") + battery.per + "%": String("Power is OFF :( b:") + battery.per + "%");
+			else
+				gsm_sendSMS(fl_5v ? String("Power is ON :)"): String("Power is OFF :("));
 		}
 	}
 
-	// накопление значений влажности
-	for(uint8_t i=0; i<SENSORS; i++) moi_tmp[i] += analogRead(sensorPIN[i]);
-	moi_count++;
-
 	// всё, что может обновляться лениво, с секундным интервалом
 	if( seconds.isReady() ) {
-		// напряжение батареи
-		battery_raw = analogRead(PIN_BAT);
-		uint16_t t_bat = constrain(battery_raw, gs.low_v, gs.high_v);
-		uint16_t half = (gs.high_v - gs.low_v) / 2 + gs.low_v;
-		if( t_bat > half )
-			battery = map(t_bat, half, gs.high_v, 20, 100);
-		else
-			battery = map(t_bat, gs.low_v, half, 0, 20);
+		// вычисление средних показаний датчиков влажности / заяда батареи
+		sensors_calc();
 
-		// датчик влажности
-		for(uint8_t i=0; i<SENSORS; i++) {
-			moi_raw[i] = moi_tmp[i]/moi_count;
-			moi_tmp[i] = 0;
-			moi_per[i] = map(moi_raw[i], mc[i].moi0, mc[i].moi100, 0, 100);
-		}
-		moi_count = 0;
 
 		if( ! fl_timeNotSync ) { // если время не определилось, то расписание проверять бесполезно
 			tm now = getTime();
@@ -281,28 +314,26 @@ void loop() {
 								else
 								if( cond == 1 ) { // условие - влажность ниже
 									uint8_t sensors = scheduler[i].cm & 31;
-									uint16_t moi = 0;
+									uint16_t m = 0;
 									if( sensors == 0 ) { // среднее по всем сенсорам
 										for(uint8_t ii=0; ii<SENSORS; ii++) {
-											moi += moi_per[ii];
+											m += moi[ii].per;
 										}
-										moi = moi / SENSORS;
-										// moi = (moi_per[0] + moi_per[1]) / 2; 
-									} else moi = moi_per[sensors-1]; // конкретный сенсор
-									if( moi < scheduler[i].cv ) fl_doit = true; // условие выполнено
+										m = m / SENSORS;
+									} else m = moi[sensors-1].per; // конкретный сенсор
+									if( m < scheduler[i].cv ) fl_doit = true; // условие выполнено
 								}
 								else
 								if( cond == 2 ) { // условие - влажность выше
 									uint8_t sensors = scheduler[i].cm & 31;
-									uint16_t moi = 0;
+									uint16_t m = 0;
 									if( sensors == 0 ) { // среднее по всем сенсорам
 										for(uint8_t ii=0; ii<SENSORS; ii++) {
-											moi += moi_per[ii];
+											m += moi[ii].per;
 										}
-										moi = moi / SENSORS;
-										// moi = (moi_per[0] + moi_per[1]) / 2; 
-									} else moi = moi_per[sensors-1]; // конкретный сенсор
-									if( moi > scheduler[i].cv ) fl_doit = true; // условие выполнено
+										m = m / SENSORS;
+									} else m = moi[sensors-1].per; // конкретный сенсор
+									if( m > scheduler[i].cv ) fl_doit = true; // условие выполнено
 								}
 								if( fl_doit ) { // можно запускать, выбор насосов, которые надо включить
 									for(uint8_t ii=0; ii<PUMPS; ii++) {
@@ -355,25 +386,20 @@ void loop() {
 		fl_need_save_state = false;
 		// отправка сообщения с текущим статусом
 		String t = "Watering: ";
-		// float sum = 0.0f;
+		float sum = 0.0f;
 		for(uint8_t i=0; i<PUMPS; i++) {
 			t += String("p:") + (i+1) + " ,c:" + ps[i].count + ", v:" + ps[i].vol + ", "; 
-			// sum += ps[i].vol;
+			sum += ps[i].vol;
 		}
-		t += String("s1:") + moi_per[0] + "%, s2:" + moi_per[1] + "%";
+		for(uint8_t i=0; i<SENSORS; i++)
+			t += String("s") + (i+1) + ":" + moi[0].per + "%, ";
+		t += String("sum:") + sum;
 		gsm_sendSMS(t);
 	}
 
-	
-
-	// touch_value_t new_touch = touchRead(BUTTON);
-	// if( new_touch != last_touch ) {
-	// 	Serial.printf("touch value = %u\n", last_touch);
-	// 	last_touch = new_touch;
-	// }
-
 }
 
+#ifdef USE_GSM
 static void TaskGSMCode( void * pvParameters ) {
 	LOG(print, "TaskGSMCode running on core ");
 	LOG(println, xPortGetCoreID());
@@ -386,3 +412,4 @@ static void TaskGSMCode( void * pvParameters ) {
 		vTaskDelay(1000/portTICK_PERIOD_MS); // раз в секунду
 	}
 }
+#endif

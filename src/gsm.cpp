@@ -1,8 +1,11 @@
 // работа с GSM модулем
 
 #include <Arduino.h>
-#include <SSLClient.h>
 #include "defines.h"
+
+#ifdef USE_GSM
+
+#include <SSLClient.h>
 
 // Configure TinyGSM library
 #define TINY_GSM_MODEM_SIM800   // Modem is SIM800
@@ -17,7 +20,14 @@ const char gprs_pass[] = "";    // Password
 const char simPIN[] = "";       // SIM card PIN code, if any
 
 // Layers stack
+#ifdef DUMP_AT_COMMANDS
+#include <StreamDebugger.h>
+StreamDebugger debugger(gsmSerial, Serial);
+TinyGsm modem(debugger);
+#else
 TinyGsm modem(gsmSerial);
+#endif
+// TinyGsm modem(gsmSerial);
 TinyGsmClient gsmTransportLayer(modem);
 SSLClient securePresentationLayer(&gsmTransportLayer);
 
@@ -96,18 +106,37 @@ void gsm_sendSMS(const String txt) {
 	sms_q.active = true;
 }
 
+// временная функция которая пересылает всё, что пришло из serial gsm в serial debug и обратно.
+// нужно только на время отладки
+void serials_repeater() {
+	#ifndef DUMP_AT_COMMANDS
+	while( gsmSerial.available() > 0 ) {
+		Serial.write(gsmSerial.read());
+	}
+	#endif
+	while( Serial.available() > 0 ) {
+		#ifdef DUMP_AT_COMMANDS
+		debugger.write(Serial.read());
+		#else
+		gsmSerial.write(Serial.read());
+		#endif
+	}
+}
+
 timerMinim gsmLazyTimer(10000); // таймер для отсчёта промежутков по 10 секунд, для проверки состояния модема
 timerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания
 
 // эти функции работают в отдельном процессе на другом ядре, чтобы не тормозить основной блок
 void gsm_pool() {
-	if( ! gsm.isInit && gsmLazyTimer.isReady() ) { // попытка инициализации модема
-		if( digitalRead(PIN_gsmRING) == HIGH ) { // возможно модем подключен
-			// if( gsm_check() ) gsm_present = true; // модем отвечает, работает
-			if( modem.begin() ) {
-				gsm.isInit = true;
-				modem.sleepEnable(true);
-				gsmSleepTimer.reset();
+	if( ! gsm.isInit ) {
+		if( gsmLazyTimer.isReady() ) { // попытка инициализации модема
+			if( digitalRead(PIN_gsmRING) == HIGH ) { // возможно модем подключен
+				// if( gsm_check() ) gsm_present = true; // модем отвечает, работает
+				if( modem.begin() ) {
+					gsm.isInit = true;
+					modem.sleepEnable(true);
+					gsmSleepTimer.reset();
+				}
 			}
 		}
 	} else {
@@ -123,6 +152,7 @@ void gsm_pool() {
 			if( modem.sendSMS(gs.sms_phone, sms_q.txt) ) sms_q.active = false;
 			gsmSleepTimer.reset();
 		}
+		serials_repeater();
 		// если модем не спит, и прошло 10 секунд, то обновить информацию о модеме
 		if( ! gsm.isSleep && gsmLazyTimer.isReady() ) {
 			gsm.info = modem.getModemInfo();
@@ -130,10 +160,20 @@ void gsm_pool() {
 			// SIM800RegStatus gsm_registrationStatus
 			gsm.status = modem.getRegistrationStatus(); // 1 - ok, остальное ошибки
 
-			if( gsmSleepTimer.isReady() ) { // пришло время спать
-				digitalWrite(PIN_gsmDTR, HIGH);
-				gsm.isSleep = true;
-			}
+			// if( gsmSleepTimer.isReady() ) { // пришло время спать
+			// 	digitalWrite(PIN_gsmDTR, HIGH);
+			// 	gsm.isSleep = true;
+			// }
 		}
 	}
 }
+
+#else
+
+void gsm_begin() {}
+bool gsm_init() { return false; }
+bool gsm_check() { return false; }
+void gsm_sendSMS(const String txt) {}
+void gsm_pool() {}
+
+#endif
