@@ -7,7 +7,7 @@
 #include "defines.h"
 #include "settings.h"
 #ifdef PIN_BUTTON 
-#include <EncButton.h> // https://github.com/GyverLibs/EncButton
+	#include <EncButton.h> // https://github.com/GyverLibs/EncButton
 #endif
 #include "wifi_init.h"
 #include "ntp.h"
@@ -16,6 +16,11 @@
 #include "ftp.h"
 #include "pump.hpp"
 #include "gsm.h"
+#include "shiftReg.h"
+
+#ifdef USE_AHTx0
+	#include "temperature.h"
+#endif
 
 PumpWater p[PUMPS]; // управление насосами
 Pump_Queue pq[PUMPS]; // очередь заданий на запуск насосов
@@ -32,6 +37,9 @@ Pump_State ps[PUMPS]; // состояние насосов и статистик
 #endif
 
 blinkMinim led(PIN_LED, LOW);
+#ifdef PIN_LED_GREEN
+blinkMinim ledGreen;
+#endif
 
 timerMinim ntpSyncTimer(3600000U * gs.sync_time_period);  // Таймер синхронизации времени с NTP-сервером 3600000U
 timerMinim hubRegTimer(60000U * gs.hub_period); // Таймер перерегистрации на hub (часах)
@@ -70,6 +78,33 @@ void setup() {
   	// put your setup code here, to run once:
 	Serial.begin(115200);
 	LOG(println, "system start");
+
+	#ifdef USE_SHIFT_REGISTER
+	sR_init();
+	#endif
+
+	#ifdef PIN_LED_GREEN
+		if( PIN_LED_GREEN <200 ) ledGreen.begin(PIN_LED_GREEN, HIGH);
+		#ifdef USE_SHIFT_REGISTER
+		else ledGreen.begin(200-0, HIGH, sR_write, sR_read);
+		#endif
+		ledGreen.set(OFF);
+	#endif
+
+	#ifdef USE_AHTx0
+	temperature_init();
+	#endif
+
+	// инициализация насосов
+	for(uint8_t i=0; i<PUMPS; i++) {
+		if( pumpPIN[i] < 200 ) // реле подключено непосредственно к пину
+			p[i].begin(pumpPIN[i], RELAY_LEVEL);
+		#ifdef USE_SHIFT_REGISTER
+		else // заготовка, реле подключено через, к примеру, через сдвиговый регистр. надо указать функции работы с pin реле
+			p[i].begin(pumpPIN[i]-200, RELAY_LEVEL, sR_write, sR_read);
+		#endif
+	}
+
 	led.blink(ON, 50);
 	// настройка pin для GSM модуля
 	gsm_begin();
@@ -124,15 +159,9 @@ void setup() {
 		pq[i].need = false;
 	}
 
-	// инициализация насосов
-	for(uint8_t i=0; i<PUMPS; i++) {
-		if( pumpPIN[i] < 200 ) // реле подключено непосредственно к пину
-			p[i].begin(pumpPIN[i], RELAY_LEVEL);
-		else // заготовка, реле подключено через, к примеру, через сдвиговый регистр. надо указать функции работы с pin реле
-			p[i].begin(pumpPIN[i]-200, RELAY_LEVEL, digitalWrite, digitalRead);
-	}
-
+	#ifdef PIN_5V
 	pinMode(PIN_5V, INPUT);
+	#endif
 
 	// инициализация подключения к wifi (в фоновом режиме)
 	wifi_setup();
@@ -189,6 +218,9 @@ void loop() {
 
 	// if( blink.isReady() ) digitalWrite(LED, !digitalRead(LED));
 	led.tick();
+	#ifdef PIN_LED_GREEN
+	ledGreen.tick();
+	#endif
 
 	// текущее состояние насосов
 	for(uint8_t i=0; i<PUMPS; i++) p[i].tick();
@@ -255,6 +287,10 @@ void loop() {
 					// for(uint8_t i=0; i<PUMPS; i++)
 					// 	p[0].stop();
 					gsm_sendSMS("test SMS");
+					#ifdef PIN_LED_GREEN
+					ledGreen.blink(!ledGreen.state());
+					ledGreen.blink(ON, 250, 3);
+					#endif
 				}
 				break;
 			case 3:
@@ -277,6 +313,7 @@ void loop() {
 	// накопление значений влажности и аккумулятора. Для уменьшение шума аналоговых датчиков
 	sensors_update();
 
+	#ifdef PIN_5V
 	if(digitalRead(PIN_5V) != fl_5v) {
 		delay(50); // проверка на случайную помеху. Резисторы стоят сильно большие и случайные наводки могут давать сбой логики.
 		if(digitalRead(PIN_5V) != fl_5v) {
@@ -289,6 +326,7 @@ void loop() {
 				gsm_sendSMS(fl_5v ? String("Power is ON :)"): String("Power is OFF :("));
 		}
 	}
+	#endif
 
 	// всё, что может обновляться лениво, с секундным интервалом
 	if( seconds.isReady() ) {
@@ -311,6 +349,7 @@ void loop() {
 								uint8_t cond = (scheduler[i].cm >> 5) & 3;
 								bool fl_doit = false;
 								if( cond == 0 ) fl_doit = true;
+								#ifdef USE_MOISTURE_SENSORS
 								else
 								if( cond == 1 ) { // условие - влажность ниже
 									uint8_t sensors = scheduler[i].cm & 31;
@@ -335,6 +374,7 @@ void loop() {
 									} else m = moi[sensors-1].per; // конкретный сенсор
 									if( m > scheduler[i].cv ) fl_doit = true; // условие выполнено
 								}
+								#endif
 								if( fl_doit ) { // можно запускать, выбор насосов, которые надо включить
 									for(uint8_t ii=0; ii<PUMPS; ii++) {
 										if( (scheduler[i].s >> ii) & 1 ) { // постановка в очередь
@@ -354,8 +394,10 @@ void loop() {
 		}
 	}
 
+	#ifdef PIN_5V
 	// если есть питание 5V - проверить очередь задач
 	if( fl_5v ) {
+	#endif
 		// стадия 1 - определение есть ли уже запущенные насосы
 		bool all_free = true;
 		for(uint8_t i=0; i<PUMPS; i++)
@@ -378,7 +420,9 @@ void loop() {
 					saveStateTimer.reset();
 					break; // выйти, так как в одно время должен быть запущен только один насос (блок питания больше не потянет)
 				}
+	#ifdef PIN_5V
 	}
+	#endif
 
 	// отложенная запись состояния для уменьшения нагрузки на flash
 	if( saveStateTimer.isReady() && fl_need_save_state ) {

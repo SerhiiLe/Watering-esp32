@@ -9,8 +9,6 @@
     #include "defines_esp32.h"
 #endif
 
-#define SCHEDULERS 8 // количество ячеек расписания полива
-
 #define TIMEZONE 2 // часовая зона по умолчанию - EET +2
 #define DSTSHIFT 1 // летнее время (+1 час)
 

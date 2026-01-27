@@ -26,6 +26,10 @@
 		<div class="holder narrow menu">
 			<fieldset style="margin-bottom: 1em;">
 				<legend>Основная информация</legend>
+				<div id="ht">
+					<div>Температура воздуха: <span id="temperature"></span>&#8451</div>
+					<div>Влажность воздуха: <span id="humidity"></span>%</div>
+				</div>
 				<div id="pp"></div>
 				<div class="row">
 					<div>Количество порций за раз</div>
@@ -113,6 +117,7 @@ function update_view(cbfunc=null) {
 			} else
 				t.innerHTML = doc[key];
 		}
+		if( $g("temperature").innerHTML.length < 1 ) $g("ht").style.display = "none";
 		var t = $g("pumpA");
 		if(t) t.innerHTML = fl_pump_on ? "On": "Off";
 		if( fl_pump_on ) setTimeout(update_view, 1000);

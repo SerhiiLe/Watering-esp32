@@ -15,16 +15,18 @@ class blinkMinim {
 	public:
 
 	// pin - номер ножки PIO, mode - включение светодиода по низкому LOW или высокому HIGH уровню
-	blinkMinim(uint8_t pin=255, uint8_t level=HIGH) {
-		if( pin != 255 ) begin(pin, level);
+	blinkMinim(uint8_t pin=255, uint8_t level=HIGH, void (*writeBit)(uint8_t, uint8_t)=*digitalWrite, int (*readBit)(uint8_t)=*digitalRead) {
+		if( pin != 255 ) begin(pin, level, writeBit, readBit);
 	}
 
 	// дублирует конструктор, для случаев, если он был вызван без аргументов
-	void begin(uint8_t pin, uint8_t level=LOW) {
+	void begin(uint8_t pin, uint8_t level=HIGH, void (*writeBit)(uint8_t, uint8_t)=*digitalWrite, int (*readBit)(uint8_t)=*digitalRead) {
 		_pin = pin;
 		_level = level;
-		pinMode(_pin, OUTPUT);
-		digitalWrite(_pin, off()); // после старта погашен
+		_writeBit = writeBit;
+		_readBit = readBit;
+		if( _writeBit == digitalWrite )	pinMode(_pin, OUTPUT);
+		_writeBit(_pin, off()); // после старта погашен
 		clean();
 	}
 
@@ -34,12 +36,12 @@ class blinkMinim {
 
 	void tick() {
 		unsigned long now = millis();
-		uint8_t state = digitalRead(_pin);
+		uint8_t state = _readBit(_pin);
 		if( _mode > 0 && _old + (state != off() ? _duration: _interval) < now ) {
 			// сработало событие
 			_old = now;
 			state = !state;
-			digitalWrite(_pin, state);
+			_writeBit(_pin, state);
 			// если это был отсчёт по количеству, то уменьшить счётчик
 			if( _cnt>0 && state == off() )
 				// если счётчик дошел до нуля, то отключить моргание
@@ -57,16 +59,20 @@ class blinkMinim {
 		_interval = interval;
 		_duration = duration > 0 ? duration: _interval;
 		_old = millis();
-		if(mode == 0) digitalWrite(_pin, off());
+		if(mode == 0) _writeBit(_pin, off());
 		_userFunc = userFunc;
 	}
 
 	void set(uint8_t mode=1) {
-		digitalWrite(_pin, mode ? !off(): off()); 
+		_writeBit(_pin, mode ? !off(): off()); 
 	}
 
 	void invert() {
-		digitalWrite(_pin, !digitalRead(_pin)); 
+		_writeBit(_pin, !_readBit(_pin)); 
+	}
+
+	uint8_t state() {
+		return _mode;
 	}
 
 	private:
@@ -87,6 +93,8 @@ class blinkMinim {
 	uint16_t _duration = 0; // продолжительность включения (0 - как interval)
 	unsigned long _old = 0; // время последнего переключения
 	void (*_userFunc)(void) = nullptr; // callback функция, которую нужно вызвать после окончания мигания
+	void (*_writeBit)(uint8_t pin, uint8_t val); // изменения состояния пина
+	int (*_readBit)(uint8_t pin); // чтения состояния пина
 
 };
 

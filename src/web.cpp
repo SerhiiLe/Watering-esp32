@@ -19,6 +19,9 @@
 #include "slave.h"
 #include "blinkMinim.hpp"
 #include "pump.hpp"
+#ifdef USE_AHTx0
+#include "temperature.h"
+#endif
 
 #define HPP(txt, ...) HTTP.client().printf(txt, __VA_ARGS__)
 
@@ -709,6 +712,12 @@ void full_status() {
 
 	HPP("\"hostname\":\"%s\",", jsonEncode(buf, gs.host_name.c_str(), sizeof(buf)));
 	HPP("\"is_auth\":%i,", HTTP.authenticate(gs.web_login.c_str(), gs.web_password.c_str()) && gs.web_password.length() > 0 ? 1 : 0);
+
+	#ifdef USE_AHTx0
+	float temp = 0.0f, hum = 0.0f;
+	getTemperature(temp, hum);
+	HPP("\"temperature\":%.2f,\"humidity\":%.2f,", temp, hum);
+	#endif
 
 	HTTP.client().print("\"pumps\":[");
 	for(uint8_t i=0; i<PUMPS; i++) {
