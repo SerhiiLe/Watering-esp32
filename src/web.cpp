@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 #include <WebServer.h>
+#include <ArduinoJson.h>
 #include "mHTTPUpdateServer.h"
 #include <ESPmDNS.h>
 #include <rom/rtc.h>
@@ -19,6 +20,7 @@
 #include "slave.h"
 #include "blinkMinim.hpp"
 #include "pump.hpp"
+#include "gsm.h"
 #ifdef USE_AHTx0
 #include "temperature.h"
 #endif
@@ -32,10 +34,12 @@ bool web_isStarted = false;
 void save_settings();
 void sysinfo();
 void moisture();
+void moisture_json();
 void save_pump();
 void save_moisture();
 void pump_on();
 void full_status();
+void hw_info();
 void scheduler_save();
 void scheduler_off();
 void maintence();
@@ -69,6 +73,11 @@ void not_found() {
 	text_send("Not Found", 404);
 }
 
+// отправка простого json
+void json_send(String s, uint16_t r = 200) {
+	HTTP.send(r, "application/json", s);
+}
+
 // диспетчер вызовов веб сервера
 void web_process() {
 	if( web_isStarted ) {
@@ -79,10 +88,12 @@ void web_process() {
 		HTTP.on("/save_settings", save_settings);
 		HTTP.on("/sysinfo", sysinfo);
 		HTTP.on("/moisture", moisture);
+		HTTP.on("/moisture.json", moisture_json);
 		HTTP.on("/save_moisture", save_moisture);
 		HTTP.on("/save_pump", save_pump);
 		HTTP.on("/pump_on", pump_on);
 		HTTP.on("/full_status", full_status);
+		HTTP.on("/hw_info", hw_info);
 		HTTP.on("/scheduler_save", scheduler_save);
 		HTTP.on("/scheduler_off", scheduler_off);
 		HTTP.on("/clear", maintence);
@@ -212,14 +223,14 @@ uint16_t decode_time(String s) {
 
 // определение выбран checkbox или нет
 bool set_simple_checkbox(const char * name, uint8_t &var) {
-	if( HTTP.hasArg(name) ) {
-		if( var == 0 ) {
+	if ( HTTP.hasArg(name) ) {
+		if ( var == 0 ) {
 			var = 1;
 			need_save = true;
 			return true;
 		}
 	} else {
-		if( var > 0 ) {
+		if ( var > 0 ) {
 			var = 0;
 			need_save = true;
 			return true;
@@ -230,8 +241,8 @@ bool set_simple_checkbox(const char * name, uint8_t &var) {
 // определение простых целых чисел
 template <typename T>
 bool set_simple_int(const char * name, T &var, long from, long to) {
-	if( HTTP.hasArg(name) ) {
-		if( HTTP.arg(name).toInt() != (long)var ) {
+	if ( HTTP.hasArg(name) ) {
+		if ( HTTP.arg(name).toInt() != (long)var ) {
 			var = constrain(HTTP.arg(name).toInt(), from, to);
 			need_save = true;
 			LOG(printf,"web int: %s change\n",name);
@@ -242,8 +253,8 @@ bool set_simple_int(const char * name, T &var, long from, long to) {
 }
 // определение дробных чисел
 bool set_simple_float(const char * name, float &var, float from, float to, float prec=8.0f) {
-	if( HTTP.hasArg(name) ) {
-		if( round(HTTP.arg(name).toFloat()*pow(10.0f,prec)) != round(var*pow(10.0f,prec)) ) {
+	if ( HTTP.hasArg(name) ) {
+		if ( round(HTTP.arg(name).toFloat()*pow(10.0f,prec)) != round(var*pow(10.0f,prec)) ) {
 			var = constrain(HTTP.arg(name).toFloat(), from, to);
 			need_save = true;
 			LOG(printf,"web float: %s change\n",name);
@@ -254,9 +265,10 @@ bool set_simple_float(const char * name, float &var, float from, float to, float
 }
 // определение простых строк
 bool set_simple_string(const char * name, String &var) {
-	if( HTTP.hasArg(name) ) {
+	if ( HTTP.hasArg(name) ) {
 		if( HTTP.arg(name) != var ) {
 			var = HTTP.arg(name);
+			var.trim();
 			need_save = true;
 			LOG(printf,"web string: %s change\n",name);
 			return true;
@@ -266,8 +278,8 @@ bool set_simple_string(const char * name, String &var) {
 }
 // определение времени
 bool set_simple_time(const char * name, uint16_t &var) {
-	if( HTTP.hasArg(name) ) {
-		if( decode_time(HTTP.arg(name)) != var ) {
+	if ( HTTP.hasArg(name) ) {
+		if ( decode_time(HTTP.arg(name)) != var ) {
 			var = decode_time(HTTP.arg(name));
 			need_save = true;
 			return true;
@@ -280,19 +292,18 @@ bool set_simple_time(const char * name, uint16_t &var) {
 
 // сохранение настроек
 void save_settings() {
-	if(is_no_auth()) return;
+	if (is_no_auth()) return;
 	need_save = false;
 
-	if( set_simple_string("host_name", gs.host_name) )
+	if ( set_simple_string("host_name", gs.host_name) )
 		if(fl_mdns)	MDNS.setInstanceName(gs.host_name);
-	set_simple_checkbox("sec_enable", gs.sec_enable);
 
 		bool sync_time = false;
-	if( set_simple_int("tz_shift", gs.tz_shift, -12, 12) )
+	if ( set_simple_int("tz_shift", gs.tz_shift, -12, 12) )
 		sync_time = true;
-	if( set_simple_checkbox("tz_dst", gs.tz_dst) )
+	if ( set_simple_checkbox("tz_dst", gs.tz_dst) )
 		sync_time = true;
-	if( set_simple_int("sync_time_period", gs.sync_time_period, 1, 255) )
+	if ( set_simple_int("sync_time_period", gs.sync_time_period, 1, 255) )
 		ntpSyncTimer.setInterval(3600000U * gs.sync_time_period);
 
 	set_simple_int("high_v", gs.high_v, 0, 4095);
@@ -301,45 +312,45 @@ void save_settings() {
 	// set_simple_int("msec_in_ml", gs.msec_in_ml, 100, 65000);
 	set_simple_int("doze", gs.doze, 10, 255);
 
+	set_simple_int("active_channel", gs.active_channel, ActiveChannel::none, ActiveChannel::sms);
+
 	bool need_registration = false;
-	if( set_simple_string("hub_name", gs.hub_name) )
+	if ( set_simple_string("hub_name", gs.hub_name) )
 		need_registration = true;
-	if( set_simple_string("hub_pin", gs.hub_pin) )
+	if ( set_simple_string("hub_pin", gs.hub_pin) )
 		need_registration = true;
-	if( set_simple_int("hub_period", gs.hub_period, 1, 255) )
+	if ( set_simple_int("hub_period", gs.hub_period, 1, 255) )
 		hubRegTimer.setInterval(60000U * gs.hub_period);
 
 	bool fl_setTelegram = false;
 	set_simple_string("tb_name", gs.tb_name);
-	if( set_simple_string("tb_chats", gs.tb_chats) )
+	if ( set_simple_string("tb_chats", gs.tb_chats) )
 		fl_setTelegram = true;
-	if( set_simple_string("tb_token", gs.tb_token) )
+	if ( set_simple_string("tb_token", gs.tb_token) )
 		fl_setTelegram = true;
-	set_simple_string("tb_secret", gs.tb_secret);
-	if( set_simple_int("tb_rate", gs.tb_rate, 0, 3600) )
+	if ( set_simple_int("tb_rate", gs.tb_rate, 0, 3600) && last_telegram == 0 )
 		telegramTimer.setInterval(1000U * gs.tb_rate);
 	set_simple_int("tb_accelerated", gs.tb_accelerated, 1, 600);
 	set_simple_int("tb_accelerate", gs.tb_accelerate, 1, 3600);
-	set_simple_int("tb_ban", gs.tb_ban, 900, 3600);
+	set_simple_int("tb_ban", gs.tb_ban, 120, 3600);
 
-	set_simple_checkbox("sms_use", gs.sms_use);
 	set_simple_string("sms_phone", gs.sms_phone);
 
 	bool need_web_restart = false;
-	if( set_simple_string("web_login", gs.web_login) )
+	if ( set_simple_string("web_login", gs.web_login) )
 		need_web_restart = true;
-	if( set_simple_string("web_password", gs.web_password) )
+	if ( set_simple_string("web_password", gs.web_password) )
 		need_web_restart = true;
 
 	HTTP.sendHeader("Location","maintenance.html");
 	HTTP.send(303);
 	delay(1);
 	LOG(printf, "save_settings need_save=%i\n", need_save);
-	if( need_save ) save_config_main();
-	if( sync_time ) syncTime();
-	if(need_web_restart) httpUpdater.setup(&HTTP, gs.web_login, gs.web_password);
-	if(need_registration) registration_dev();
-	// if(fl_setTelegram) setup_telegram();
+	if (need_save) save_config_main();
+	if (sync_time) syncTime();
+	if (need_web_restart) httpUpdater.setup(&HTTP, gs.web_login, gs.web_password);
+	if (need_registration) registration_dev();
+	if (fl_setTelegram) setup_telegram();
 }
 
 // перезагрузка железки, сброс ком-порта, отключение сети и диска, чтобы ничего не мешало перезагрузке
@@ -419,10 +430,14 @@ void set_clock() {
 		delay(1);
 	} else {
 		tm t = getTime();
-		HTTP.client().print("HTTP/1.1 200\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{");
-		HPP("\"time\":\"%u\",", t.tm_hour*60+t.tm_min);
-		HPP("\"date\":\"%u-%02u-%02u\"}", t.tm_year +1900, t.tm_mon +1, t.tm_mday);
-		HTTP.client().stop();
+		char buf[50];
+		sniprintf(buf, sizeof(buf), 
+			"{\"time\":\"%u\","
+			"\"date\":\"%u-%02u-%02u\"}",
+			t.tm_hour*60+t.tm_min,
+			t.tm_year +1900, t.tm_mon +1, t.tm_mday
+		);
+		json_send(String(buf));
 	}
 }
 
@@ -439,16 +454,7 @@ void onoff() {
 			// включает/выключает ftp сервер, чтобы не кушал ресурсов просто так
 			if(a) ftp_isAllow = !ftp_isAllow;
 			cond = ftp_isAllow;
-		} //else
-		// if(HTTP.arg(name) == F("security")) {
-		// 	// включает/выключает режим "охраны"
-		// 	if(a) sec_enable = !(bool)sec_enable;
-		// 		cond = sec_enable;
-		// 	if(a) {
-		// 		save_log_file(cond?SEC_TEXT_ENABLE:SEC_TEXT_DISABLE);
-		// 		save_config_security();
-		// 	}
-		// }
+		}
 	}
 	text_send(cond?"1":"0");
 }
@@ -544,39 +550,64 @@ const char* print_reset_reason(char *buf) {
 void sysinfo() {
 	if(is_no_auth()) return;
 	char buf[100];
-	HTTP.client().print("HTTP/1.1 200\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{");
-	HPP("\"Uptime\":\"%s\",", getUptime(buf));
-	HPP("\"DateTime\":\"%s\",", getTimeDate(buf));
-	HPP("\"fl_5v\":%i,", fl_5v);
-	HPP("\"Battery\":%u,", battery.per);
-	HPP("\"Battery_raw\":%u,", battery.raw);
-	HPP("\"Rssi\":%i,", wifi_rssi());
-	HPP("\"IP\":\"%s\",", wifi_currentIP().c_str());
+	JsonDocument doc;
+
+	doc["Uptime"] = getUptime(buf);
+	doc["DateTime"] = getTimeDate(buf);
+	doc["fl_5v"] = fl_5v;
+	doc["Battery"] = battery.per;
+	doc["Battery_raw"] = battery.raw;
+	doc["Rssi"] = wifi_rssi();
+	doc["IP"] = wifi_currentIP().c_str();
 	#ifdef USE_GSM
-	HPP("\"gsm_info\":\"%s\",", gsm.info.c_str());
-	HPP("\"gsm_rssi\":\"%i\",", map(gsm.rssi, 0, 32, 0, 100));
-	HPP("\"gsm_status\":\"%i\",", gsm.isSleep ? -10: gsm.status);
+	doc["gsm_info"] = gsm.info.c_str();
+	doc["gsm_rssi"] = map(gsm.rssi, 0, 32, 0, 100);
+	doc["gsm_status"] = gsm.isSleep ? -10: gsm.status;
 	#endif
-	HPP("\"FreeHeap\":%i,", ESP.getFreeHeap());
-	HPP("\"MaxFreeBlockSize\":%i,", ESP.getMaxAllocHeap());
-	HPP("\"HeapFragmentation\":%i,", 100-ESP.getMaxAllocHeap()*100/ESP.getFreeHeap());
-	HPP("\"ResetReason\":\"%s\",", print_reset_reason(buf));
-	HPP("\"FullVersion\":\"%s\",", print_full_platform_info(buf));
-	HPP("\"CpuFreqMHz\":%i,", ESP.getCpuFreqMHz());
-	HPP("\"BuildTime\":\"%s %s\"}", PSTR(__DATE__), PSTR(__TIME__));
+	doc["FreeHeap"] = ESP.getFreeHeap();
+	doc["MaxFreeBlockSize"] = ESP.getMaxAllocHeap();
+	doc["HeapFragmentation"] = 100-ESP.getMaxAllocHeap()*100/ESP.getFreeHeap();
+	doc["ResetReason"] = print_reset_reason(buf);
+	doc["FullVersion"] = print_full_platform_info(buf);
+	doc["CpuFreqMHz"] = ESP.getCpuFreqMHz();
+	sprintf(buf, "%s %s", PSTR(__DATE__), PSTR(__TIME__));
+	doc["BuildTime"] = buf;
+
+	String jsonPayload;
+	serializeJson(doc, jsonPayload);
+	json_send(jsonPayload);
 }
 
-// Информация о состоянии железки
+// Информация о состоянии датчика влажности
 void moisture() {
 	if(is_no_auth()) return;
-	HTTP.client().print("HTTP/1.1 200\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{");
+	char buf[200] = "{";
+	size_t s = 1;
 	for(uint8_t i=0; i<SENSORS; i++) {
-		HPP("\"raw%u\":%u,", i, moi[i].raw);
-		HPP("\"per%u\":%u%s", i, moi[i].per, i+1<SENSORS ? ",":"}");
+		s += snprintf(buf + s, sizeof(buf) - s,
+			"\"raw%u\":%u,"
+			"\"per%u\":%u%s",
+			i, moi[i].raw,
+			i, moi[i].per, i+1<SENSORS ? ",":"}"
+		);
 	}
+	json_send(String(buf));
 }
 
-// сохранение настроек
+// список датчиков влажности
+void moisture_json() {
+	if(is_no_auth()) return;
+	JsonDocument doc;
+	for(uint8_t i=0; i<SENSORS; i++) {
+		doc[i]["moi0"] = mc[i].moi0;
+		doc[i]["moi100"] = mc[i].moi100;
+	}
+	String jsonPayload;
+	serializeJson(doc, jsonPayload);
+	json_send(jsonPayload);
+}
+
+// сохранение настроек датчиков влажности
 void save_moisture() {
 	if(is_no_auth()) return;
 	need_save = false;
@@ -596,6 +627,7 @@ void save_moisture() {
 	if( need_save ) save_moisture_calibration();
 }
 
+// сохранить калибровку насосов
 void save_pump() {
 	if(is_no_auth()) return;
 	need_save = false;
@@ -617,6 +649,7 @@ void save_pump() {
 
 extern PumpWater p[];
 
+// запуск насоса на нужное количество порций/секунд
 void pump_on() {
 	if(is_no_auth()) return;
 	bool cond=false;
@@ -633,7 +666,6 @@ void pump_on() {
 		if( HTTP.hasArg(name) ) {
 			sec = constrain(HTTP.arg(name).toInt(), 0, 255);
 		}
-		// if( ! p[pump].status() ) {
 		if( ! p[pump].active() ) {
 			pq[pump].active = true;
 			pq[pump].need = cnt;
@@ -644,6 +676,7 @@ void pump_on() {
 	text_send(cond?"1":"0");
 }
 
+/*
 // печать байта в виде шестнадцатеричного числа
 void print_byte(char *buf, byte c, size_t& pos) {
 	if((c & 0xf) > 9)
@@ -704,35 +737,75 @@ const char* jsonEncode(char* buf, const char *str, size_t max_length) {
 	buf[p++] = '\0';
 	return buf;
 }
+*/
 
 void full_status() {
 	if(is_no_auth()) return;
 	char buf[100];
-	HTTP.client().print("HTTP/1.1 200\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{");
+	JsonDocument doc;
 
-	HPP("\"hostname\":\"%s\",", jsonEncode(buf, gs.host_name.c_str(), sizeof(buf)));
-	HPP("\"is_auth\":%i,", HTTP.authenticate(gs.web_login.c_str(), gs.web_password.c_str()) && gs.web_password.length() > 0 ? 1 : 0);
-
+	doc["hostname"] = gs.host_name.c_str();
 	#ifdef USE_AHTx0
-	float temp = 0.0f, hum = 0.0f;
-	getTemperature(temp, hum);
-	HPP("\"temperature\":%.2f,\"humidity\":%.2f,", temp, hum);
+		float temp = 0.0f, hum = 0.0f;
+		getTemperature(temp, hum);
+		doc["temperature"] = serialized(String(temp, 1));
+		doc["humidity"] = serialized(String(hum, 1));
+	#endif
+	JsonArray pumps = doc["pumps"].to<JsonArray>();
+	for(uint8_t i=0; i<PUMPS; i++) {
+		pumps[i]["con"] = serialized(String(ps[i].vol, 2));
+		pumps[i]["cnt"] = ps[i].count;
+		pumps[i]["last"] = getTimeDateU(buf, ps[i].last < p[i].last() ? p[i].last(): ps[i].last);
+		pumps[i]["pump"] = p[i].active();
+	}
+	JsonArray sensors = doc["sensors"].to<JsonArray>();
+	for(uint8_t i=0; i<SENSORS; i++) {
+		sensors.add(moi[i].per);
+	}
+
+	String jsonPayload;
+	serializeJson(doc, jsonPayload);
+	json_send(jsonPayload);
+}
+
+// информация об аппаратной конфигурации
+void hw_info() {
+	JsonDocument doc;
+
+	#ifdef USE_GSM
+	doc["use_gsm"] = 1;
+	#else
+	doc["use_gsm"] = 0;
+	#endif
+	#ifdef USE_MOISTURE_SENSORS
+	doc["use_moisture"] = 1;
+	#else
+	doc["use_moisture"] = 0;
+	#endif
+	#ifdef USE_AHTx0
+	doc["use_aht"] = 1;
+	#else
+	doc["use_aht"] = 0;
+	#endif
+	#ifdef PIN_LED_GREEN
+	doc["use_green"] = 1;
+	#else
+	doc["use_green"] = 0;
+	#endif
+	#ifdef PIN_BAT
+	doc["use_battary"] = 1;
+	#else
+	doc["use_battary"] = 0;
+	#endif
+	#ifdef PIN_5V
+	doc["use_5v"] = 1;
+	#else
+	doc["use_5v"] = 0;
 	#endif
 
-	HTTP.client().print("\"pumps\":[");
-	for(uint8_t i=0; i<PUMPS; i++) {
-		HPP("{\"con\":%.2f,", ps[i].vol);
-		HPP("\"cnt\":%u,", ps[i].count);
-		HPP("\"last\":\"%s\",", getTimeDateU(buf, ps[i].last < p[i].last() ? p[i].last(): ps[i].last));
-		HPP("\"pump\":%u}%s", p[i].active(), i+1<PUMPS ? ",":"");
-	}
-	HTTP.client().print("],\"sensors\":[");
-	for(uint8_t i=0; i<SENSORS; i++) {
-		HPP("%u%s",moi[i].per, i+1<SENSORS ? ",":"");
-	}
-	HTTP.client().print("]}");
-
-	HTTP.client().stop();
+	String jsonPayload;
+	serializeJson(doc, jsonPayload);
+	json_send(jsonPayload);
 }
 
 /*
@@ -822,6 +895,7 @@ const char help[] = R"""(
 (s)tate= - состояние системы
 (e)nable=N - выдать одну порцию
 N - номер насоса или 0 - все
+/help - расширенная справка
 )""";
 
 const char* on_off(bool fl) {
@@ -841,76 +915,19 @@ void api() {
 				for(int i=0; i<num_args; i++) {
 					String arg_name = HTTP.argName(i);
 					if(arg_name.startsWith("h")) {
-						HTTP.send(200, "text/plain", help);
+						text_send(help);
+						// HTTP.send(200, "text/plain", help);
 						LOG(println, "api: send help");
 					}
-					if(arg_name.startsWith("m")) {
-						// включает/выключает режим "охраны"
-						uint8_t t = gs.sec_enable;
-						gs.sec_enable = HTTP.arg(i).toInt();
-						// if( t != sec_enable ) {
-						// 	save_log_file(sec_enable?SEC_TEXT_ENABLE:SEC_TEXT_DISABLE);
-						// 	save_config_security();
-						// }
-						// if(sec_enable) {
-						// 	save_log_file(SEC_TEXT_ENABLE);
-						// 	text_send(F("отсылка сообщений включена"));
-						// } else {
-						// 	save_log_file(SEC_TEXT_DISABLE);
-						// 	text_send(F("отсылка сообщений отключена"));
-						// }
-						LOG(printf, "api: switch security to ", gs.sec_enable);
+					if (arg_name == "cmd") {
+						text_send(shared_menu(HTTP.arg(i)));
 					}
 					if(arg_name.startsWith("e")) { // включение насосов на одну порцию
-						int a = HTTP.arg(i).toInt();
-						bool fl = false;
-						if( a >= 1 && a <= PUMPS ) {
-							pq[a-1].need = 1;
-							pq[a-1].active = true;
-						} else if( a == 0 ) {
-							for(uint8_t ii=0; ii<PUMPS; ii++) {
-								pq[ii].need = 1;
-								pq[ii].active = true;
-							}
-						}
-						text_send(String("enable=") + a + " ok");
+						text_send(shared_menu("1*" + HTTP.arg(i)));
 					}
 					if(arg_name.startsWith("s")) {
-						#define MAX_STR 1200
-						#define PP(txt, ...) p += snprintf(p, MAX_STR+out-p, txt, __VA_ARGS__)
-
-						char* out = (char*) malloc(MAX_STR * sizeof(char));
-						char* p = out;
-
-						PP("hostname: %s\n",  gs.host_name.c_str());
-
-						// отправка сообщения с текущим статусом
-						float sum = 0.0f;
-						for(uint8_t i=0; i<PUMPS; i++) {
-							PP("p: %u, c: %u, v: %.2f\n", i+1, ps[i].count, ps[i].vol); 
-							sum += ps[i].vol;
-						}
-						PP("sum: %.2f liter\n", sum);
-						for(uint8_t i=0; i<SENSORS; i++) {
-							PP("s%u: %u%%\n", i+1, moi[i].per);
-						}
-						PP("bat: %u%%", battery);
-
-						// PP("\nmode: %s", on_off(gs.sec_enable));
-						*p = 0;
-
-						#undef PP
-						#undef MAX_STR
-						text_send(String(out));
-						free(out);
+						text_send(shared_menu("/status"));
 						LOG(println, F("api: send status"));
-					}
-					if(arg_name.startsWith("j")) {
-						int a = HTTP.arg(i).toInt();
-						if( a==0 ) a=10;
-						if( a>48 ) a=48; // ограничение из-за ограничений памяти
-						// text_send(read_log_file(a));
-						LOG(printf, "api: send %d log string", a);
 					}
 				}
 			}

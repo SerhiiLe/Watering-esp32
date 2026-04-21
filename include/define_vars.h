@@ -3,9 +3,24 @@
 
 // определение глобальных переменных
 
+/*
+Каналы для отправки сообщений:
+0 - none - полностью автономная работа
+1 - hub - отправка на мастер устройство найденное через mdns (web)
+2 - wifi - отправка через телеграм и wifi
+3 - gprs - отправка через телеграм и gprs
+4 - sms - отпраавка напрямую через gsm-sms
+*/
+enum ActiveChannel {
+	none,	// - полностью автономная работа
+	hub,	// - отправка на мастер устройство найденное через mdns
+	wifi,	// - отправка через телеграм и wifi
+	gprs,	// - отправка через телеграм и gprs
+	sms		// - отпраавка напрямую через gsm-sms
+};
+
 struct Global_Settings {
 	String host_name = "water"; // название устройства в локальной сети, по умолчанию.
-	uint8_t sec_enable = 1; // запись событий в журнал
 
 	int8_t tz_shift = TIMEZONE; // временная зона, смещение локального времени относительно Гринвича (часы)
 	uint8_t tz_dst = DSTSHIFT; // смещение летнего времени (часы)
@@ -23,15 +38,14 @@ struct Global_Settings {
 
 	String tb_name = ""; // имя бота, адрес. Свободная строка, только для справки
 	String tb_chats = ""; // чаты из которых разрешено принимать команды
-	String tb_secret = ""; // пароль для подключения функции управления из чата в телеграм
 	String tb_token = ""; // API токен бота
 	uint16_t tb_rate = 300; // интервал запроса новых команд в секундах
 	uint16_t tb_accelerated = TELEGRAM_ACCELERATED; // ускоренный интервал запроса новых команд в секундах
 	uint16_t tb_accelerate = TELEGRAM_ACCELERATE; // время в течении которого будет работать ускорение
 	uint16_t tb_ban = TELEGRAM_BAN; // время на которе прекращается опрос новых сообщений, после сбоя, в секундах
 
-	uint8_t sms_use = 0; // использовать sms вместо telegram
-	String sms_phone = ""; // номер телефона, куда отправлять sms 
+	uint8_t active_channel = ActiveChannel::hub; // канал отправки сообщений
+	String sms_phone = ""; // номера телефона, откуда принимать звонки и команды, первый номер - куда отправлять sms
 
 	String web_login = "admin"; // логин для вэб
 	String web_password = ""; // пароль для вэб
@@ -101,6 +115,7 @@ extern bool wifi_isConnected;
 extern bool wifi_isPortal;
 extern bool fl_timeNotSync;
 extern bool ftp_isAllow;
+extern time_t last_telegram;
 
 struct GSM_Info {
 	String info = "";

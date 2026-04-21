@@ -1,39 +1,42 @@
-// работа с GSM модулем
-
+/*
+	Файл с определением основной логики приёма/отправки сообщений.
+*/
 #include <Arduino.h>
-#include "defines.h"
-
-#ifdef USE_GSM
-
 #include <SSLClient.h>
+#include "defines.h"
+#include "slave.h"
+#include "ntp.h"
+#include "TelegramAPI.hpp"
+#include <WiFi.h>
+#include "cert.h"
+#include "gsm.h"
 
-// Configure TinyGSM library
-#define TINY_GSM_MODEM_SIM800   // Modem is SIM800
-#define TINY_GSM_RX_BUFFER 1024 // Set RX buffer to 1Kb
-#include <TinyGsmClient.h>
+#define MODEM_UART_BAUD 115200
 
-#define GSM_UART_BAUD 115200
-// Your GPRS credentials (leave empty, if missing)
-const char apn[] = "Internet";  // Your APN
-const char gprs_user[] = "";    // User
-const char gprs_pass[] = "";    // Password
-const char simPIN[] = "";       // SIM card PIN code, if any
+#define QUEUE_SIZE 20
+QueueHandle_t strQueue = xQueueCreate(QUEUE_SIZE, sizeof(char*));
+char* received = nullptr;
 
-// Layers stack
-#ifdef DUMP_AT_COMMANDS
-#include <StreamDebugger.h>
-StreamDebugger debugger(gsmSerial, Serial);
-TinyGsm modem(debugger);
-#else
-TinyGsm modem(gsmSerial);
-#endif
-// TinyGsm modem(gsmSerial);
-TinyGsmClient gsmTransportLayer(modem);
-SSLClient securePresentationLayer(&gsmTransportLayer);
+// Отправка сообщений (постановка в очередь)
+bool sendMessage(const char* text) {          // или const String&
+    if (text == nullptr) return false;
 
-// * Certificate bundle with 41 most used root certificates
-extern const uint8_t ca_cert_bundle_start[] asm("_binary_crt_x509_crt_bundle_bin_start");
-extern const uint8_t ca_cert_bundle_end[] asm("_binary_crt_x509_crt_bundle_bin_end");
+    size_t len = strlen(text) + 1;
+    char* copy = (char*)malloc(len);   // или  malloc(len); / pvPortMalloc(len);
+    if (copy == nullptr) return false;
+
+    strcpy(copy, text);
+
+    if (xQueueSend(strQueue, &copy, 0) != pdPASS) {
+        free(copy);                           // не удалось отправить — освобождаем free(copy) / vPortFree(copy);
+		return false;
+    }
+	return true;
+}
+// Отправка сообщений (постановка в очередь)
+bool sendMessage(const String& text) {
+	return sendMessage(text.c_str());
+}
 
 GSM_Info gsm; // статус модема
 
@@ -43,137 +46,327 @@ struct SMS_Queue {
 };
 SMS_Queue sms_q;
 
-// Функция для проверки соединения с модулем
-bool gsm_check() {
-	LOG(print, "Проверка связи с модулем SIM800... ");
-  
-	// modem.testAT() отправляет команду "AT" и ждет ответа "OK"
-	// Она возвращает true, если ответ получен, и false в противном случае.
-	// Второй аргумент (1000) - это таймаут в миллисекундах.
-	if (modem.testAT(1000)) {
-		LOG(println, "Успех! Модуль GSM найден и отвечает.");
-		return true;
-	} else {
-		LOG(println, "Провал! Модуль не найден или не отвечает.");
-		return false;
-	}
-	// String date_time = modem.getGSMDateTime(DATE_FULL);
-	// modem.getNetworkTime(int *year, int *month, int *day, int *hour, int *minute, int *second, float *timezone);
-	// modem.getNetworkUTCTime(int *year, int *month, int *day, int *hour, int *minute, int *second, float *timezone);
-	// modem.isGprsConnected();
-	// modem.isNetworkConnected();
-	// modem.sendAT("+CMGF=1", "+CMGL=\"ALL\""); // перевести модем в текстовый режим, запросить список всех sms
-	// modem.sendAT("+CMGR=1"); // прочитать sms #1
-	// modem.sendAT("+CMGD=1"); // удалить sms #1
-/*	
-	<stat> integer type in PDU mode (default 0), or string type in text mode (default
-	"REC UNREAD"); indicates the status of message in memory; defined values:
-	0 "REC UNREAD"   received unread message (i.e. new message)
-	1 "REC READ"     received read message
-	2 "STO UNSENT"   stored unsent message (only applicable to SMs)
-	3 "STO SENT"     stored sent message (only applicable to SMs)
-	4 "ALL"          all messages (only applicable to +CMGL command)
-*/
-}
-
-void gsm_begin() {
-	// Set SIM module baud rate and UART pins
-	gsmSerial.begin(GSM_UART_BAUD, SERIAL_8N1, PIN_gsmRX, PIN_gsmTX);
-
-	// Set certificate bundle to SSL client
-	securePresentationLayer.setCACertBundle(ca_cert_bundle_start);
-
-	// пин аппаратной перезагрузки (hard reset) low на 100мс
-	pinMode(PIN_gsmRST, OUTPUT);
-	// Reset pin high
-	digitalWrite(PIN_gsmRST, HIGH);
-	
-	// пин для контроля режима сна. high = sleep. После просыпания за 50мс надо опять загружать сертификаты, 
-	pinMode(PIN_gsmDTR, OUTPUT);
-	digitalWrite(PIN_gsmDTR, LOW);
-
-	// пин по которому приходит сигнал вызова low на 120vc, можно использовать как сигнал пробуждения платы от сна
-	pinMode(PIN_gsmRING, INPUT);
-}
-
-bool gsm_init() {
-
-	return false;
-}
-
-void gsm_sendSMS(const String txt) {
-	sms_q.txt = txt;
-	sms_q.active = true;
-}
-
-// временная функция которая пересылает всё, что пришло из serial gsm в serial debug и обратно.
-// нужно только на время отладки
-void serials_repeater() {
-	#ifndef DUMP_AT_COMMANDS
-	while( gsmSerial.available() > 0 ) {
-		Serial.write(gsmSerial.read());
-	}
-	#endif
-	while( Serial.available() > 0 ) {
-		#ifdef DUMP_AT_COMMANDS
-		debugger.write(Serial.read());
-		#else
-		gsmSerial.write(Serial.read());
-		#endif
-	}
-}
-
 timerMinim gsmLazyTimer(10000); // таймер для отсчёта промежутков по 10 секунд, для проверки состояния модема
 timerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания
 
-// эти функции работают в отдельном процессе на другом ядре, чтобы не тормозить основной блок
-void gsm_pool() {
-	if( ! gsm.isInit ) {
+#ifdef USE_GSM
+
+// Configure TinyGSM library
+#define TINY_GSM_MODEM_SIM800   // Modem is SIM800
+#define TINY_GSM_RX_BUFFER 1024 // Set RX buffer to 1Kb
+#include <TinyGsmClient.h>  // должен быть после указания, какой тип модема используется
+
+// Your GPRS credentials (leave empty, if missing)
+const char apn[] = "Internet";          // Your APN
+const char gprs_user[] = "";    // User
+const char gprs_pass[] = "";    // Password
+const char simPIN[] = "";       // SIM card PIN code, if any
+
+
+// Layers stack
+TinyGsm modem(gsmSerial);
+TinyGsmClient gsmTransportLayer(modem);
+
+#endif
+
+WiFiClient webTransportLayer;
+// SSLClient securePresentationLayer(&gsmTransportLayer);
+SSLClient securePresentationLayer(&webTransportLayer); // транспорт по умолчанию wifi, но потом он меняется вместе с каналом
+
+TelegramAPI tg(securePresentationLayer);
+
+
+bool fl_gprs = false; // отправка сообщений через gprs
+bool fl_call = false; // входящее сообщение. Звонок или SMS
+bool fl_dtmf = false; // звонок активен, ожидаются dtmf команды
+unsigned long callStart = 0;
+time_t last_telegram = 0;
+time_t disable_telegram = 0;
+
+// Function prototypes
+bool checkConnection();
+String handleMessage(TResult &t);
+
+#include "gsmApi.h"  // должен быть после определения modem
+
+// проверка, работает ли активный канал: gprs или wifi
+bool checkConnection() {
+	#ifdef USE_GSM
+		if( fl_gprs ) return gprs_check();
+	#else
+		if( fl_gprs ) return false;
+	#endif
+	return WiFi.status() == WL_CONNECTED;
+}
+
+// инициализация телеграм бота
+void setup_telegram() {
+	tg.setBotToken(gs.tb_token);
+	tg.setChatID(extractFirstNumber(gs.tb_chats).toInt());
+	tg.attachCallback(handleMessage);
+	tg.attachCheckConnection(checkConnection);
+	tg.setInterval(gs.tb_accelerated);
+	last_telegram = getTimeU();
+}
+
+// инициализация задачи. Тоже, что setup() для основной задачи Arduino
+void setup2() {
+	Serial.println("Setup2");
+
+	#ifdef USE_GSM
+
+	// Set SIM module baud rate and UART pins
+	gsmSerial.begin(MODEM_UART_BAUD, SERIAL_8N1, PIN_gsmRX, PIN_gsmTX);
+
+	securePresentationLayer.setCACert(TELEGRAM_CA_CERT);
+
+	// Настройка/инициализация PIN на работу с модемом
+	LOG(println, "Setup modem");
+	pinMode(PIN_gsmRST, OUTPUT);
+	// RST
+	pinMode(PIN_gsmDTR, OUTPUT);
+	digitalWrite(PIN_gsmDTR, LOW);
+	// RING
+	pinMode(PIN_gsmRING, INPUT);
+	// Reset pin high
+	digitalWrite(PIN_gsmRST, HIGH);
+
+	// // Initialize SIM800. Как показала практика hard reset 99% не нужен.
+	// LOG(println, "Initializing modem...");
+	// while( !modem.begin() ) {
+	// 	LOG(println, "hard reset :(");
+	// 	hardResetModem();
+	// }
+
+	#endif
+
+	setup_telegram();
+	sendMessage("hello :)");
+
+	LOG(println, "Started!");
+}
+
+// Обработка сообщений как входящих, так и исходящих
+void messagePool() {
+	// сначала обработка входящих
+	// затем проверка очереди сообщений на отправку
+	// но в начале надо поставить из основной очереди в кеш сообщение для отправки, если есть
+	if (!sms_q.active && xQueueReceive(strQueue, &received, 0) == pdPASS) {
+		if (received) {
+			vTaskDelay(10);
+			LOG(printf, "To send: %s\n", received);
+			sms_q.txt = String(received);
+			sms_q.active = true;
+			free(received);               // ОБЯЗАТЕЛЬНО освобождаем! free() / vPortFree(received)
+		}
+	}
+	// проверка, не закончилось ли время бана при сбое опроса телеграм
+	if(disable_telegram && getTimeU() - disable_telegram > gs.tb_ban) disable_telegram = 0;
+
+	#ifdef USE_GSM
+
+	// ожидание подключения модема. Он может быть просто выключен.
+	if ( ! gsm.isInit ) {
 		if( gsmLazyTimer.isReady() ) { // попытка инициализации модема
 			if( digitalRead(PIN_gsmRING) == HIGH ) { // возможно модем подключен
+				LOG(println, "GSM init");
 				// if( gsm_check() ) gsm_present = true; // модем отвечает, работает
 				if( modem.begin() ) {
+					LOG(println, "GSM init ok");
 					gsm.isInit = true;
+					gsm.isSleep = false;
 					modem.sleepEnable(true);
 					gsmSleepTimer.reset();
 				}
 			}
 		}
-	} else {
-		// модем модем подключен, проверка очереди
-		if( sms_q.active ) {
-			if( gsm.isSleep ) {
-				digitalWrite(PIN_gsmDTR, LOW);
-				gsm.isSleep = false;
-				delay(60);
-				securePresentationLayer.setCACertBundle(ca_cert_bundle_start);
+	}
+	// LOG(print, gsm.isInit);
+	// секция ожидания чего-то входящего от GSM. Это может быть или звонок или SMS, для всего остального инициатор микроконтроллер
+	if (gsm.isInit) {
+		if ( gsm.isSleep && digitalRead(PIN_gsmRING) == LOW ) {
+			LOG(println, "DTR LOW");
+			// похоже пришол звонок. будим модем если надо и уходим на новый цикл в надежде поймать RING
+			gsm_wake();
+			fl_call = true;
+			callStart = millis();
+			return; // выход после каждого блока для сброса watchdog timer
+		}
+		if ( gsmSerial.available() > 0 ) {
+			LOG(println, "Serial available");
+			// в этом месте данные могут появится только если пришел звонок. Или случайный мусор.
+			fl_call = true;
+			callStart = millis();
+			// в этом месте могут появится только данные, которые не касаются инициализации, настроек, работы GPRS.
+			// по этому надо прочесть всю строку, чтобы понять, что хотел сказать модем
+			// и попутно ставится флаг fl_call для блокировки обращений к gprs
+			checkGsm();
+			gsmSleepTimer.reset();
+			return;
+		}
+		if (gs.active_channel == gprs ) { // канал через GSM/GPRS
+			if (!disable_telegram) { 
+				if (!fl_call && telegramTimer.isReady()) { // пришло время проверить сообщения в телеграм
+					LOG(println, "new message request");
+					if (gsm.isSleep) gsm_wake();
+					if (tg.checkMessage(true) < 0 ) disable_telegram = getTimeU();
+					gsmSleepTimer.reset();
+					return;
+				}
+				if (sms_q.active) {
+					vTaskDelay(30);
+					if (tg.sendMessage(sms_q.txt)) sms_q.active = false;
+				}
 			}
-			if( ! modem.isNetworkConnected() ) return;
-			if( modem.sendSMS(gs.sms_phone, sms_q.txt) ) sms_q.active = false;
+		}
+		if (gs.active_channel == sms && sms_q.active) { // канал SMS, только отправка, работает на приём нестабильно
+			LOG(printf, "number for send: %s", extractFirstNumber(gs.sms_phone).c_str());
+			if( modem.sendSMS(extractFirstNumber(gs.sms_phone), sms_q.txt) ) sms_q.active = false;
 			gsmSleepTimer.reset();
 		}
-		serials_repeater();
-		// если модем не спит, и прошло 10 секунд, то обновить информацию о модеме
-		if( ! gsm.isSleep && gsmLazyTimer.isReady() ) {
+		// если модем не спит, ничем не занят, и прошло 10 секунд, то обновить информацию о модеме
+		if( !fl_dtmf && !fl_call && ! gsm.isSleep && gsmLazyTimer.isReady() ) {
 			gsm.info = modem.getModemInfo();
 			gsm.rssi = modem.getSignalQuality();
 			// SIM800RegStatus gsm_registrationStatus
 			gsm.status = modem.getRegistrationStatus(); // 1 - ok, остальное ошибки
 
-			// if( gsmSleepTimer.isReady() ) { // пришло время спать
-			// 	digitalWrite(PIN_gsmDTR, HIGH);
-			// 	gsm.isSleep = true;
-			// }
+			if( gsmSleepTimer.isReady() ) { // пришло время спать
+				digitalWrite(PIN_gsmDTR, HIGH);
+				gsm.isSleep = true;
+				LOG(println, "Sleep time");
+			}
 		}
+
+		if ( !fl_dtmf && millis() - callStart > 10000L ) fl_call = false;
+	}
+	#endif
+
+	// секция опроса новых сообщений из не GSM
+	if (!gs.active_channel) return; // нет канала для уведомлений
+	if (gs.active_channel == wifi) { // канал через wifi
+		if (!disable_telegram) { 
+			if (telegramTimer.isReady())
+				if (tg.checkMessage(true) < 0 ) disable_telegram = getTimeU();
+			if (sms_q.active) {
+				vTaskDelay(30);
+				if (tg.sendMessage(sms_q.txt)) sms_q.active = false;
+			}
+		}
+	}
+	if (gs.active_channel == hub) { // канал через wifi и hub
+		// только отправка сообщений. Приём через web.cpp / slave.cpp
+		if (sms_q.active)
+			if (tb_send_msg(sms_q.txt)) sms_q.active = false;
+	}
+	// проверка времени ускорения работы telegram
+	if (last_telegram > 0 && getTimeU() - last_telegram > gs.tb_accelerate) {
+		LOG(printf, "disable telegram accelerate (last_telegram=%u, now=%u)/n", last_telegram, getTimeU());
+		telegramTimer.setInterval(1000U * gs.tb_rate);
+		last_telegram = 0;
 	}
 }
 
-#else
+// ────────────────────────────────────────────────────────────────────────────────
+//   Обработка поступивших вхядящих команд из разных источников
+// ────────────────────────────────────────────────────────────────────────────────
 
-void gsm_begin() {}
-bool gsm_init() { return false; }
-bool gsm_check() { return false; }
-void gsm_sendSMS(const String txt) {}
-void gsm_pool() {}
+// переключение активного канала
+String switchActiveChannel(uint8_t ch) {
+	String result;
+	switch (ch) {
+		case ActiveChannel::none: // ничего не отсылать
+			break;
+		case ActiveChannel::hub: // отправка через Hub
+			if ( WiFi.status() != WL_CONNECTED ) {
+				result = "Не получилось переключится: WiFi отключен";
+			} else {
+				securePresentationLayer.setClient(&webTransportLayer);
+				fl_gprs = false;
+				gs.active_channel = hub;
+				result = "Канал переключен на Hub";
+			}
+			break;
+		case ActiveChannel::wifi: // отправка через telegram и WiFi
+			if ( WiFi.status() != WL_CONNECTED ) {
+				result = "Не получилось переключится: WiFi отключен";
+			} else {
+				securePresentationLayer.setClient(&webTransportLayer);
+				fl_gprs = false;
+				gs.active_channel = wifi;
+				result = "Канал переключен на WiFi";
+			}
+			break;
+		#ifdef USE_GSM
+		case ActiveChannel::gprs: // отправка через telegram и GPRS
+			if (gsm.isSleep) gsm_wake();
+			if ( ! gprs_check() ) {
+				result = "Не получилось переключится: GPRS отключен";
+			} else {
+				securePresentationLayer.setClient(&gsmTransportLayer);
+				fl_gprs = true;
+				gs.active_channel = gprs;
+				result = "Канал переключен на GPRS";
+			}
+			break;
+		case ActiveChannel::sms: // отправка через SMS
+			if (gsm.isSleep) gsm_wake();
+			if ( ! gsm_check() ) {
+				result = "Не получилось переключится: GSM отключен";
+			} else {
+				securePresentationLayer.setClient(&gsmTransportLayer);
+				fl_gprs = true;
+				gs.active_channel = sms;
+				result = "Channel was switched to SMS";
+			}
+			break;
+		#endif
+		default:
+			result = (
+				"unknown channel\n"
+				"0 - none\n"
+				"1 - Hub\n"
+				"2 - telegram/WiFi\n"
+				#ifdef USE_GSM
+				"3 - telegram/GPRS\n"
+				"4 - SMS"
+				#endif
+			);
+	}
+	LOG(println, result);
+	return result;
+}
 
-#endif
+// ────────────────────────────────────────────────────────────────────────────────
+//  Обработчик команд пришедших из телеграм.
+//  Туда и ответы сразу отсылаются, в обход очереди
+//  Но так как и запросы и ответы идут в одном потоке, то конфликта быть не должно
+// ────────────────────────────────────────────────────────────────────────────────
+String handleMessage(TResult &t) {
+	// новое сообщение включает ускоренный опрос новых сообщений
+	if(last_telegram == 0 && gs.tb_rate > gs.tb_accelerated) {
+		telegramTimer.setInterval(1000U * gs.tb_accelerated);
+		LOG(println, "enable telegram accelerate");
+	}
+	last_telegram = getTimeU();
+	LOG(printf, "last_telegram=%u\n", last_telegram);
+
+	// String reply = "";
+	// if (t.text.startsWith("/")) t.text = t.text.substring(1);
+	if (t.text == "/start") {
+		return (
+			"Hi, " + t.from + "!\n\n"
+			"/chatid - show ChatID\n"
+			"/help - show help"
+			);
+	} else if (t.text == "/chatid") {
+		return "ChatID: " + String(t.chatId);
+	}
+	if (t.text.length() > 0 && isWhitelisted(String(t.chatId), gs.tb_chats))
+		return shared_menu(t.text);
+	if (t.text == "/help")
+		return "for registered users only";
+	return "Эхо: " + t.text;
+}
+
+#include "menu.h" // вынесено просто чтобы немного разгрузить этот файл

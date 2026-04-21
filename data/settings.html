@@ -35,10 +35,6 @@
 						<div>Название поливалка в локальной сети</div>
 						<div class="nb">http://<input name="str_hostname" type="text" value="water">.local</div>
 					</div>
-					<div class="row">
-						<div>Писать log (журнал событий)</div>
-						<div><input name="sec_enable" type="checkbox" value="1"></div>
-					</div>
 					<div class="one i b center">Настройка времени</div>
 					<div class="row">
 						<div>Временная зона (смещение относительно Гринвича) (от -12 до 12)</div>
@@ -62,13 +58,22 @@
 						<div><input name="low_v" type="number" value="2219"></div>
 					</div>
 					<div class="one i b center">Настройка насосов</div>
-					<!-- <div class="row">
-						<div>За сколько миллисекунд набирается 10мл</div>
-						<div><input name="msec_in_ml" type="number" value="1000"></div>
-					</div> -->
 					<div class="row">
 						<div>Одна порция, в миллилитрах, не меньше 10 мл.</div>
 						<div><input name="doze" type="number" value="30"></div>
+					</div>
+					<div class="one i b center">Отправка сообщений</div>
+					<div class="row">
+						<div>Канал отправки сообщений</div>
+						<div>
+							<select name="active_channel">
+								<option value="0">none</option>
+								<option value="1">wifi/hub</option>
+								<option value="2">wifi/telegram</option>
+								<option value="3">gprs/telegram</option>
+								<option value="4">sms</option>
+							</select>
+						</div>
 					</div>
 					<div class="one i b center">Настройка хаба</div>
 					<div class="row">
@@ -89,16 +94,12 @@
 						<input name="tb_name" type="text" class="long">
 					</div>
 					<div class="one">
-						Chat ID (номера чатов указываются через запятую)
+						Chat ID (номера чатов указываются через запятую, уведомления отсылаются только на первый)
 						<input name="tb_chats" type="text" class="long">
 					</div>
 					<div class="one">
 						Bot token:
 						<input name="tb_token" type="text" class="long">
-					</div>
-					<div class="row">
-						<div>Пароль активации чата</div>
-						<div><input name="tb_secret" type="text" value="" class="m"></div>
 					</div>
 					<div class="row">
 						<div>Период опроса в секундах (0=отключен, только отправка)</div>
@@ -116,13 +117,9 @@
 						<div>Время прекращения новых опросов после сбоя, в секундах (900-3600)</div>
 						<div><input name="tb_ban" type="number" value="1800"></div>
 					</div>
-					<div class="one i b center">Настройка SMS</div>
-					<div class="row">
-						<div>Отправлять SMS вместо telegram</div>
-						<div><input name="sms_use" type="checkbox" value="1"></div>
-					</div>
-					<div class="row">
-						<div>Номер телефона, куда слать sms</div>
+					<div class="one i b center">Настройка SMS/GPRS</div>
+					<div class="one">
+						Номера телефона, откуда принимать команды sms и звонки (через запятую, только на первый номер отправляются sms)
 						<div><input name="sms_phone" type="text" value="" class="long"></div>
 					</div>
 					<div class="one i b center">Доступ к настройкам</div>

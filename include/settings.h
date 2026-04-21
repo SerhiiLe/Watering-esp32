@@ -15,7 +15,6 @@ bool load_config_log();
 void save_config_log();
 void save_log_file(const char* text);
 void save_log_file(String text);
-String read_log_file(int16_t cnt);
 
 #define LOG_MAX 50		// максимальная строка одной записи лога (45 + символы склейки "%0A" + конец строки \0)
 #define LOG_SIZE 4096	// максимальный размер файла, после которого запись будет во второй файл. (запись по кругу)

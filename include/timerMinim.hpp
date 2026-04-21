@@ -22,15 +22,15 @@ class timerMinim
 		// объявление таймера с указанием интервала
 		timerMinim(uint32_t interval=60000) {
 			setInterval(interval);
-			reset();
 		}
-		// установка интервала работы таймера
+		// установка интервала работы таймера и сброс таймера
 		void setInterval(uint32_t interval) {
 			// хотя-бы одна миллисекунда, для приличия
 			_interval = interval == 0 ? 1: interval;
+			reset();
 		}
 		// возвращает true, когда пришло время.
-		boolean isReady() {
+		bool isReady() {
 			unsigned long time = millis();
 			if(_overflow) { // попытка защититься от переполнения
 				if(time < _time) // ждём переполнения, которое наступает каждые 49 дней

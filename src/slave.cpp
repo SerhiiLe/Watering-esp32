@@ -113,8 +113,6 @@ bool tb_send_msg(const char *msg) {
 	if(hub_ip == INADDR_NONE) return false;
 	// IPAddress ip = {172,16,1,133};
 
-	if(gs.sec_enable==0) return true; 
-
 	bool success = true;
 	String serverPath = "http://" + hub_ip.toString() + "/send";
 	String httpRequestData = "pin=" + gs.hub_pin + "&msg=" + urlEncode(msg);

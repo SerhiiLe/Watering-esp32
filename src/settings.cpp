@@ -45,8 +45,7 @@ bool load_config_main() {
 	// double longitude = doc["data"][1];
 
 	gs.host_name = doc["host_name"].as<String>();
-	gs.sec_enable = doc["sec_enable"];
-
+	
 	gs.tz_shift = doc["tz_shift"];
 	gs.tz_dst = doc["tz_dst"];
 	gs.sync_time_period = doc["sync_time_period"]; ntpSyncTimer.setInterval(3600000U * gs.sync_time_period);
@@ -57,6 +56,8 @@ bool load_config_main() {
 	// gs.msec_in_ml = doc["msec_in_ml"];
 	gs.doze = doc["doze"];
 
+	gs.active_channel = doc["active_channel"];
+
 	gs.hub_name = doc["hub_name"].as<String>();
 	gs.hub_pin = doc["hub_pin"].as<String>();
 	gs.hub_period = doc["hub_period"];
@@ -64,14 +65,11 @@ bool load_config_main() {
 	gs.tb_name = doc["tb_name"].as<String>();
 	gs.tb_chats = doc["tb_chats"].as<String>();
 	gs.tb_token = doc["tb_token"].as<String>();
-	gs.tb_secret = doc["tb_secret"].as<String>();
 	gs.tb_rate = doc["tb_rate"];
-	gs.tb_accelerated = doc["tb_accelerated"];
-	telegramTimer.setInterval(1000U * gs.tb_accelerated);
+	gs.tb_accelerated = doc["tb_accelerated"]; telegramTimer.setInterval(1000U * gs.tb_accelerated);
 	gs.tb_accelerate = doc["tb_accelerate"];
 	gs.tb_ban = doc["tb_ban"];
 
-	gs.sms_use = doc["sms_use"];
 	gs.sms_phone = doc["sms_phone"].as<String>();
 
 	gs.web_login = doc["web_login"].as<String>();
@@ -87,8 +85,7 @@ void save_config_main() {
 	JsonDocument doc; // временный буфер под объект json
 
 	doc["host_name"] = gs.host_name;
-	doc["sec_enable"] = gs.sec_enable;
-
+	
 	doc["tz_shift"] = gs.tz_shift;
 	doc["tz_dst"] = gs.tz_dst;
 	doc["sync_time_period"] = gs.sync_time_period;
@@ -99,6 +96,8 @@ void save_config_main() {
 	// doc["msec_in_ml"] = gs.msec_in_ml;
 	doc["doze"] = gs.doze;
 
+	doc["active_channel"] = gs.active_channel;
+
 	doc["hub_name"] = gs.hub_name;
 	doc["hub_pin"] = gs.hub_pin;
 	doc["hub_period"] = gs.hub_period;
@@ -106,13 +105,11 @@ void save_config_main() {
 	doc[F("tb_name")] = gs.tb_name;
 	doc[F("tb_chats")] = gs.tb_chats;
 	doc[F("tb_token")] = gs.tb_token;
-	doc[F("tb_secret")] = gs.tb_secret;
 	doc[F("tb_rate")] = gs.tb_rate;
 	doc[F("tb_accelerated")] = gs.tb_accelerated;
 	doc[F("tb_accelerate")] = gs.tb_accelerate;
 	doc[F("tb_ban")] = gs.tb_ban;
 
-	doc["sms_use"] = gs.sms_use;
 	doc["sms_phone"] = gs.sms_phone;
 
 	doc["web_login"] = gs.web_login;
@@ -403,51 +400,6 @@ void save_config_log() {
 	delay(2);
 
 	LOG(println, "log state saved");
-}
-
-// чтение последних cnt строк лога
-String read_log_file(int16_t cnt) {
-	if(!fs_isStarted) return String(F("no fs"));
-
-	// всего надо отдать cnt последних строк.
-	// Если файл только начал писаться, то надо показать последние записи предыдущего файла
-	// сначала считывается предыдущий файл
-	int16_t cur = 0;
-	int16_t aCnt = 0;
-	char aStr[cnt][LOG_MAX];
-	uint8_t prevFile = ls.curFile > 0 ? ls.curFile-1: LOG_COUNT-1; // вычисление предыдущего лог-файла
-	char fileName[32];
-	sprintf(fileName, LOG_FILE, prevFile);
-	File logFile = LittleFS.open(fileName, "r");
-	if(logFile) {
-		while(logFile.available()) {
-			strncpy(aStr[cur], logFile.readStringUntil('\n').c_str(), LOG_MAX); // \r\n
-			cur = (cur+1) % cnt;
-			aCnt++;
-		}
-	}
-	logFile.close();
-	// теперь считывается текущий файл
-	sprintf_P(fileName, LOG_FILE, ls.curFile);
-	logFile = LittleFS.open(fileName, "r");
-	if(logFile) {
-		while(logFile.available()) {
-			strncpy(aStr[cur], logFile.readStringUntil('\n').c_str(), LOG_MAX);
-			cur = (cur+1) % cnt;
-			aCnt++;
-		}
-	}
-	logFile.close();
-	// теперь надо склеить массив в одну строку и отдать назад
-	String str = "";
-	char *ptr;
-	for(int16_t i = min(aCnt,cnt); i > 0; i--) {
-		cur = cur > 0 ? cur-1: cnt-1;
-		ptr = aStr[cur] + strlen(aStr[cur]) - 1;
-		if( i>1 ) strcpy(ptr, "\n"); // возврат последнего символа перевод строки
-		str += aStr[cur];
-	}
-	return str;
 }
 
 void save_log_file(String text) {

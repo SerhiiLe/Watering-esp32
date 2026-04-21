@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include <LittleFS.h>
+#include <esp_task_wdt.h>
 #include "defines.h"
 #include "settings.h"
 #ifdef PIN_BUTTON 
@@ -86,9 +87,10 @@ void setup() {
 	#ifdef PIN_LED_GREEN
 		if( PIN_LED_GREEN <200 ) ledGreen.begin(PIN_LED_GREEN, HIGH);
 		#ifdef USE_SHIFT_REGISTER
-		else ledGreen.begin(200-0, HIGH, sR_write, sR_read);
+		else ledGreen.begin(200-PIN_LED_GREEN, HIGH, sR_write, sR_read);
 		#endif
-		ledGreen.set(OFF);
+		// ledGreen.set(OFF);
+		ledGreen.blink(ON, 1000, 0, 10); // heartbeat. Нужно для "освежения" состояния сдвигового регистра
 	#endif
 
 	#ifdef USE_AHTx0
@@ -105,9 +107,8 @@ void setup() {
 		#endif
 	}
 
+	// частое моргание светодиодом в момент запуска. Если ошибка, то моргать будет немного медленнее. Хотя кто там отличит...
 	led.blink(ON, 50);
-	// настройка pin для GSM модуля
-	gsm_begin();
 	// начальный вектор псевдослучайных чисел
 	randomSeed(analogRead(A0)+analogRead(A0));
 	// get the ESP32 chip information
@@ -119,11 +120,11 @@ void setup() {
 			LOG(println, "LittleFS mounted");
 		} else {
 			LOG(println, "LittleFS is empty");
-			led.blink(ON, 100);
+			led.blink(ON, 500);
 		}
 	} else {
 		LOG(println, "ERROR LittleFS mount");
-		led.blink(ON, 100);
+		led.blink(ON, 500);
 	}
 	// чтение/создание файлов конфигурации
 	if(!load_config_main()) {
@@ -166,17 +167,15 @@ void setup() {
 	// инициализация подключения к wifi (в фоновом режиме)
 	wifi_setup();
 
-	#ifdef USE_GSM
 	// Start the connection task
 	xTaskCreatePinnedToCore(
 		TaskGSMCode,         /* Function to implement the task */
 		"TaskGSMCode",       /* Name of the task */
-		10000,               /* Stack size in words */
+		8192,                /* Stack size in words */
 		NULL,                /* Task input parameter */
-		0,                   /* Priority of the task */
+		1,                   /* Priority of the task */
 		&gsmTaskHandle,      /* Task handle. */
 		0);                  /* Core where the task should run */
-	#endif
 }
 
 // накопление значений влажности и аккумулятора. Для уменьшение шума аналоговых датчиков
@@ -189,6 +188,7 @@ void sensors_update() {
 }
 
 void sensors_calc() {
+	if( moi_count == 0 ) sensors_update(); // ещё небыло опросов - опросить в первый раз
 	// датчик влажности
 	for(uint8_t i=0; i<SENSORS; i++) {
 		moi[i].raw = moi[i].sum/moi_count;
@@ -198,7 +198,6 @@ void sensors_calc() {
 	}
 	// вычисление заряда батареи
 	#ifdef PIN_BAT
-		if( moi_count == 0 ) sensors_update();
 		battery.raw = battery.sum/moi_count;
 		uint16_t t_bat = constrain(battery.raw, gs.low_v, gs.high_v);
 		uint16_t half = (gs.high_v - gs.low_v) / 2 + gs.low_v;
@@ -286,10 +285,12 @@ void loop() {
 				} else {
 					// for(uint8_t i=0; i<PUMPS; i++)
 					// 	p[0].stop();
-					gsm_sendSMS("test SMS");
+					sendMessage("test SMS");
 					#ifdef PIN_LED_GREEN
-					ledGreen.blink(!ledGreen.state());
-					ledGreen.blink(ON, 250, 3);
+					if (ledGreen.state()) 
+						ledGreen.blink(OFF);
+					else
+						ledGreen.blink(ON, 1000, 0, 10); // heartbeat
 					#endif
 				}
 				break;
@@ -300,7 +301,7 @@ void loop() {
 			case 4:
 				LOG(println, "4 click");
 				fl_password_reset_req = true;
-				led.blink(ON, 1000, 0, 100);
+				led.blink(ON, 3000, 0, 200);
 				break;
 			case 5:
 				LOG(println, "5 click");
@@ -320,10 +321,10 @@ void loop() {
 			fl_5v = ! fl_5v;
 			// отослать sms об изменении состояния питания
 			if( battery.per == 0 ) sensors_calc();
-			if( battery.per )
-				gsm_sendSMS(fl_5v ? String("Power is ON :) b:") + battery.per + "%": String("Power is OFF :( b:") + battery.per + "%");
-			else
-				gsm_sendSMS(fl_5v ? String("Power is ON :)"): String("Power is OFF :("));
+			if( battery.per ) {
+				sendMessage(fl_5v ? "Power is ON :) b:" + String(battery.per) + "%": "Power is OFF :( b:" + String(battery.per) + "%");
+			} else
+				sendMessage(fl_5v ? "Power is ON :)": "Power is OFF :(");
 		}
 	}
 	#endif
@@ -438,22 +439,26 @@ void loop() {
 		for(uint8_t i=0; i<SENSORS; i++)
 			t += String("s") + (i+1) + ":" + moi[0].per + "%, ";
 		t += String("sum:") + sum;
-		gsm_sendSMS(t);
+		sendMessage(t);
 	}
-
 }
 
-#ifdef USE_GSM
 static void TaskGSMCode( void * pvParameters ) {
 	LOG(print, "TaskGSMCode running on core ");
 	LOG(println, xPortGetCoreID());
 	vTaskDelay(1);
-
+	// Стандартный watchdog срабатывет через 5 секунд, а ответ от модема иногда приходится ждать 10-15 секнуд
+	// по этому увеличение до 20 секнд для этой задачи
+	esp_task_wdt_init(20, true);
+	// esp_task_wdt_config_t config = { .timeout_ms = 20000, .trigger_panic = false };
+	// esp_task_wdt_reconfigure(&config);
+	setup2();
+	
 	for(;;) {
 		// единственное, что должна делать эта задача - обслуживать gsm модем
-		gsm_pool();
+		messagePool();
 		// обязательная пауза, чтобы задача смогла вернуть управление FreeRTOS, иначе будет срабатывать watchdog timer
-		vTaskDelay(1000/portTICK_PERIOD_MS); // раз в секунду
+		// vTaskDelay(1000/portTICK_PERIOD_MS); // раз в секунду (оказалось, что слишком медленно)
+		vTaskDelay(pdMS_TO_TICKS(10));
 	}
 }
-#endif

@@ -33,7 +33,7 @@ void syncTime() {
 	if(fl_needStartTime) {
 		start_time = now - millis()/1000;
 		fl_needStartTime = false;
-		// if(sec_enable) save_log_file(SEC_TEXT_BOOT);
+		last_telegram = now;
 	}
 	fl_timeNotSync = false;
 	LOG(println, now);

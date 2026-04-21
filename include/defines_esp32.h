@@ -7,9 +7,8 @@
 // #define USE_AHTx0 // исспользовать датчик температуры и влажности AHT10/AHT20
 
 #ifdef USE_GSM
-    #define DUMP_AT_COMMANDS
     // Определение всех параметров, ножек и пр.
-    #define gsmSerial Serial2
+    #define gsmSerial Serial2 // Set serial for AT commands (to the SIM800 module)
     #define PIN_gsmTX 17 // RX SM800L 4
     #define PIN_gsmRX 16 // TX SM800L 5
     #define PIN_gsmRST 2 // RST
@@ -18,9 +17,10 @@
 #endif
 
 #ifdef USE_SHIFT_REGISTER
-    #define PIN_DO 6    // вывод данных
-    #define PIN_CLK 7   // тактовый сигнал
-    #define PIN_CS 10   // активация чипа
+    #define PIN_LATCH 5 	// (12) защёлка сдвигового регистра (ST_CP)
+    #define PIN_CLOCK 18    // (11) тактовая сдвигового регистра (SH_CP)
+    #define PIN_DATA 23		// (14) данные сдвигового регистра (DS)
+    #define PIN_OE 19       // (13) подключение к нагрузке (!OE)
 #endif
 
 #define PIN_LED 22 // светодиод напаянный на плату
