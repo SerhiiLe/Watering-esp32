@@ -33,7 +33,11 @@
 					<div class="one i b center">Общие настройки</div>
 					<div class="row">
 						<div>Название поливалка в локальной сети</div>
-						<div class="nb">http://<input name="str_hostname" type="text" value="water">.local</div>
+						<div class="nb">http://<input name="host_name" type="text" value="water">.local</div>
+					</div>
+					<div class="row use_green">
+						<div>Моргать зелёным светодиодим (heartbeat)</div>
+						<div><input name="blink_g" type="checkbox" value="1"></div>
 					</div>
 					<div class="one i b center">Настройка времени</div>
 					<div class="row">
@@ -48,14 +52,16 @@
 						<div>Периодичность синхронизации ntp. (1-255 часов)</div>
 						<div><input name="sync_time_period" type="number" value="8"></div>
 					</div>
-					<div class="one i b center">Настройка датчика напряжения аккумулятора</div>
-					<div class="row">
-						<div>Показания при 100%, 4.2V</div>
-						<div><input name="high_v" type="number" value="4095"></div>
-					</div>
-					<div class="row">
-						<div>Показания при 0%, 2.8V</div>
-						<div><input name="low_v" type="number" value="2219"></div>
+					<div class="use_battary">
+						<div class="one i b center">Настройка датчика напряжения аккумулятора</div>
+						<div class="row">
+							<div>Показания при 100%, 4.2V</div>
+							<div><input name="high_v" type="number" value="4095"></div>
+						</div>
+						<div class="row">
+							<div>Показания при 0%, 2.8V</div>
+							<div><input name="low_v" type="number" value="2219"></div>
+						</div>
 					</div>
 					<div class="one i b center">Настройка насосов</div>
 					<div class="row">
@@ -70,8 +76,8 @@
 								<option value="0">none</option>
 								<option value="1">wifi/hub</option>
 								<option value="2">wifi/telegram</option>
-								<option value="3">gprs/telegram</option>
-								<option value="4">sms</option>
+								<option value="3" class="use_gsm">gprs/telegram</option>
+								<option value="4" class="use_gsm">sms</option>
 							</select>
 						</div>
 					</div>
@@ -87,6 +93,14 @@
 					<div class="row">
 						<div>Периодичность обновления регистрации. (1-255 минут)</div>
 						<div><input name="hub_period" type="number" value="10"></div>
+					</div>
+					<div class="row">
+						<div>PIN для подключения подчинённых устройст</div>
+						<div><input name="slave_pin" type="text" value=""></div>
+					</div>
+					<div class="row">
+						<div>Время жизни регистрации подчинённых устройст. (1-255 минут)</div>
+						<div><input name="slave_timeout" type="number" value="10"></div>
 					</div>
 					<div class="one i b center">Настройка Telegram</div>
 					<div class="one">
@@ -117,19 +131,37 @@
 						<div>Время прекращения новых опросов после сбоя, в секундах (900-3600)</div>
 						<div><input name="tb_ban" type="number" value="1800"></div>
 					</div>
-					<div class="one i b center">Настройка SMS/GPRS</div>
-					<div class="one">
-						Номера телефона, откуда принимать команды sms и звонки (через запятую, только на первый номер отправляются sms)
-						<div><input name="sms_phone" type="text" value="" class="long"></div>
+					<div class="use_gsm">
+						<div class="one i b center">Настройка SMS/GPRS</div>
+						<div class="one">
+							Номера телефона, откуда принимать команды sms и звонки (через запятую, только на первый номер отправляются sms)
+							<div><input name="sms_phone" type="text" value="" class="long"></div>
+						</div>
+						<div class="row">
+							<div>PIN code разблокировки SIM card</div>
+							<div><input name="pin_code" type="text" value=""></div>
+						</div>
+						<div class="row">
+							<div>GPRS APN (Internet)</div>
+							<div><input name="gprs_apn" type="text" value="Internet"></div>
+						</div>
+						<div class="row">
+							<div>GPRS login (пусто)</div>
+							<div><input name="gprs_user" type="text" value=""></div>
+						</div>
+						<div class="row">
+							<div>GPRS password (пусто)</div>
+							<div><input name="gprs_pass" type="text" value=""></div>
+						</div>
 					</div>
 					<div class="one i b center">Доступ к настройкам</div>
 					<div class="row">
 						<div>login</div>
-						<div><input name="web_login" type="text" value="" class="m" oninput="calcLen(3,20)" id="in3"></div>
+						<div><input name="web_login" type="text" value=""></div>
 					</div>
 					<div class="row">
 						<div>password</div>
-						<div><input name="web_password" type="text" value="" class="m" oninput="calcLen(4,30)" id="in4"></div>
+						<div><input name="web_password" type="text" value=""></div>
 					</div>
 				</div>
 				<button>Сохранить</button>
@@ -145,6 +177,7 @@ function start() {
 	if (typeof ajaxRequest !== "undefined") {
 		fill_settings("config.json","settings", () => {
 			$g("shadow").style.display = "none";
+			hide_missing_hardware();
 		});
 	} else setTimeout(start, 100);
 }

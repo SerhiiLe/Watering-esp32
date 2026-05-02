@@ -43,9 +43,9 @@ void sR_enable() {
 #endif
 
 // вывести подготовленные данные в регистр
-void sR_go() {
+void sR_go(bool force) {
 	// если комбинация не изменилась, то ничего не делать.
-	if(_sR_old == _sR_reg) return;
+	if(_sR_old == _sR_reg && !force) return;
 	// устанавливаем "защелку" на LOW, переводя в режим программирования
 	digitalWrite(PIN_LATCH, LOW);
 	// передаем последовательно на dataPin
@@ -75,7 +75,7 @@ int sR_read(uint8_t pin) {
 #else
 
 void sR_init() {}
-void sR_go() {}
+void sR_go(bool force) {}
 void sR_set(uint8_t pin, uint8_t state) {}
 void sR_write(uint8_t pin, uint8_t state) {}
 int sR_read(uint8_t pin)  { return 0; }

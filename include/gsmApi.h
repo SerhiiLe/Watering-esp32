@@ -73,7 +73,7 @@ bool gsm_check() {
 	if( modem.isNetworkConnected() ) return true;
 	// не подключено, что странно, модем не отключается от сети в режиме сна, наверное модем был не инициализирован
 	// modem.restart();
-	if (simPIN && modem.getSimStatus() != 3) { modem.simUnlock(simPIN); } // разблокировка SIM если стоит pin-код
+	if (gs.pin_code.length() > 0 && modem.getSimStatus() != 3) { modem.simUnlock(gs.pin_code.c_str()); } // разблокировка SIM если стоит pin-код
 	// delay(200); // небольшая пауза. В общем то она не нужна, так как будет ожидание на следующем этапе
 	for (int i=0; i<10; i++) {
 		if( !modem.waitForNetwork(500) ) {
@@ -93,7 +93,7 @@ bool gprs_check() {
 	if( modem.isGprsConnected() ) return true;
 	// не подключено, тоже странно, gprs не должен отключаться в режиме сна
 	// но могли закончится деньги!
-	if (!modem.gprsConnect(apn, gprs_user, gprs_pass)) {
+	if (!modem.gprsConnect(gs.gprs_APN.c_str(), gs.gprs_user.c_str(), gs.gprs_pass.c_str())) {
 		LOG(println, "Failed to connect to MODEM_APN (GPRS)");
 		return false;
 	}

@@ -40,18 +40,22 @@ void save_moisture();
 void pump_on();
 void full_status();
 void hw_info();
-void scheduler_save();
-void scheduler_off();
+void schedule_save();
+void schedule_off();
 void maintence();
 void set_clock();
 void onoff();
 void logout();
 void calibrate();
 void api();
+void registration();
+void send();
 
 bool fileSend(String path);
 bool need_save = false;
 bool fl_mdns = false;
+
+cur_slave slave[MAX_SLAVES];
 
 // отключение веб сервера для активации режима настройки wifi
 void web_disable() {
@@ -88,19 +92,21 @@ void web_process() {
 		HTTP.on("/save_settings", save_settings);
 		HTTP.on("/sysinfo", sysinfo);
 		HTTP.on("/moisture", moisture);
-		HTTP.on("/moisture.json", moisture_json);
+		HTTP.on("/moisture_json", moisture_json);
 		HTTP.on("/save_moisture", save_moisture);
 		HTTP.on("/save_pump", save_pump);
 		HTTP.on("/pump_on", pump_on);
 		HTTP.on("/full_status", full_status);
 		HTTP.on("/hw_info", hw_info);
-		HTTP.on("/scheduler_save", scheduler_save);
-		HTTP.on("/scheduler_off", scheduler_off);
+		HTTP.on("/schedule_save", schedule_save);
+		HTTP.on("/schedule_off", schedule_off);
 		HTTP.on("/clear", maintence);
 		HTTP.on("/clock", set_clock);
 		HTTP.on("/onoff", onoff);
 		HTTP.on("/logout", logout);
 		HTTP.on("/api", api);
+		HTTP.on("/registration", registration);
+		HTTP.on("/send", send);
 		HTTP.on("/who", [](){
 			text_send(gs.host_name);
 		});
@@ -297,6 +303,7 @@ void save_settings() {
 
 	if ( set_simple_string("host_name", gs.host_name) )
 		if(fl_mdns)	MDNS.setInstanceName(gs.host_name);
+	set_simple_checkbox("blink_g", gs.blink_g);
 
 		bool sync_time = false;
 	if ( set_simple_int("tz_shift", gs.tz_shift, -12, 12) )
@@ -312,7 +319,13 @@ void save_settings() {
 	// set_simple_int("msec_in_ml", gs.msec_in_ml, 100, 65000);
 	set_simple_int("doze", gs.doze, 10, 255);
 
-	set_simple_int("active_channel", gs.active_channel, ActiveChannel::none, ActiveChannel::sms);
+	set_simple_int("active_channel", gs.active_channel, ActiveChannel::none,
+		#ifdef USE_GSM
+		ActiveChannel::sms
+		#else
+		ActiveChannel::wifi
+		#endif
+	);
 
 	bool need_registration = false;
 	if ( set_simple_string("hub_name", gs.hub_name) )
@@ -321,6 +334,8 @@ void save_settings() {
 		need_registration = true;
 	if ( set_simple_int("hub_period", gs.hub_period, 1, 255) )
 		hubRegTimer.setInterval(60000U * gs.hub_period);
+	set_simple_string("slave_pin", gs.slave_pin);
+	set_simple_int("slave_timeout", gs.slave_timeout, 1, 255);
 
 	bool fl_setTelegram = false;
 	set_simple_string("tb_name", gs.tb_name);
@@ -335,6 +350,10 @@ void save_settings() {
 	set_simple_int("tb_ban", gs.tb_ban, 120, 3600);
 
 	set_simple_string("sms_phone", gs.sms_phone);
+	set_simple_string("pin_code", gs.pin_code);
+	set_simple_string("gprs_apn", gs.gprs_APN);
+	set_simple_string("gprs_user", gs.gprs_user);
+	set_simple_string("gprs_pass", gs.gprs_pass);
 
 	bool need_web_restart = false;
 	if ( set_simple_string("web_login", gs.web_login) )
@@ -354,7 +373,7 @@ void save_settings() {
 }
 
 // перезагрузка железки, сброс ком-порта, отключение сети и диска, чтобы ничего не мешало перезагрузке
-void reboot_watcher() {
+void reboot_board() {
 	Serial.flush();
 	WiFi.mode(WIFI_OFF);
 	WiFi.getSleep(); //disable AP & station by calling "WiFi.mode(WIFI_OFF)" & put modem to sleep
@@ -363,28 +382,59 @@ void reboot_watcher() {
 	ESP.restart();
 }
 
+void remove_settings(const char *filename) {
+	if (LittleFS.exists(filename)) {
+		LOG(printf, "Delete file: %s\n", filename);
+		LittleFS.remove(filename);
+	}
+}
+
 void maintence() {
-	if(is_no_auth()) return;
-	HTTP.sendHeader(F("Location"),"/");
+	if (is_no_auth()) return;
+	HTTP.sendHeader("Location","/");
 	HTTP.send(303); 
-	// initRString(PSTR("Сброс"));
-	if( HTTP.hasArg("t") ) {
-		if( HTTP.arg("t") == "c" && LittleFS.exists(F("/config.json")) ) {
-			LOG(println, PSTR("reset settings"));
-			LittleFS.remove(F("/config.json"));
-			reboot_watcher();
+
+	if (HTTP.hasArg("t")) {
+		bool fl_reboot = false;
+		if (HTTP.arg("t") == "1") { // основные настройки
+			remove_settings("/config.json");
+			fl_reboot = true;
 		}
-		if( HTTP.arg("t") == "l" ) {
-			LOG(println, PSTR("erase logs"));
-			char fileName[32];
-			for(int8_t i=0; i<LOG_COUNT; i++) {
-				sprintf_P(fileName, LOG_FILE, i);
-				if( LittleFS.exists(fileName) ) LittleFS.remove(fileName);
+		if (HTTP.arg("t") == "2") { // рассписание
+			remove_settings("/schedule.json");
+			fl_reboot = true;
+		}
+		if (HTTP.arg("t") == "3") { // счётчики расхода воды
+			remove_settings("/pump_state.json");
+			fl_reboot = true;
+		}
+		if (HTTP.arg("t") == "96") { // всё, включая настройки wifi
+			foget_wifi();
+    		File root = LittleFS.open("/");
+			if (root) {
+			    if (root.isDirectory()) {
+				    File file = root.openNextFile();
+					while (file) {
+						String fileName = file.name();
+						if (fileName.endsWith(".json")) {
+							file.close(); // Close before deleting!
+							LOG(printf, "Delete file: %s\n", fileName);
+							LittleFS.remove("/" + fileName); 
+						}
+						file = root.openNextFile();
+					}
+				}
 			}
-			reboot_watcher();
+			fl_reboot = true;
 		}
-		if( HTTP.arg("t") == "r" ) {
-			reboot_watcher();
+		if( HTTP.arg("t") == "r" ) { // только перезагрузка
+			fl_reboot = true;
+		}
+		if (fl_reboot) {
+			HTTP.sendHeader("Location","/index.html");
+			HTTP.send(303);
+			delay(1);
+			reboot_board();
 		}
 	}
 }
@@ -554,15 +604,22 @@ void sysinfo() {
 
 	doc["Uptime"] = getUptime(buf);
 	doc["DateTime"] = getTimeDate(buf);
+	#ifdef PIN_5V
 	doc["fl_5v"] = fl_5v;
+	#endif
+	#ifdef PIN_BAT
 	doc["Battery"] = battery.per;
 	doc["Battery_raw"] = battery.raw;
+	#endif
 	doc["Rssi"] = wifi_rssi();
 	doc["IP"] = wifi_currentIP().c_str();
 	#ifdef USE_GSM
 	doc["gsm_info"] = gsm.info.c_str();
 	doc["gsm_rssi"] = map(gsm.rssi, 0, 32, 0, 100);
 	doc["gsm_status"] = gsm.isSleep ? -10: gsm.status;
+	#endif
+	#ifdef USE_AHTx0
+	doc["aht"] = fl_AHTIsInit ? "Ok":"None";
 	#endif
 	doc["FreeHeap"] = ESP.getFreeHeap();
 	doc["MaxFreeBlockSize"] = ESP.getMaxAllocHeap();
@@ -676,69 +733,7 @@ void pump_on() {
 	text_send(cond?"1":"0");
 }
 
-/*
-// печать байта в виде шестнадцатеричного числа
-void print_byte(char *buf, byte c, size_t& pos) {
-	if((c & 0xf) > 9)
-		buf[pos+1] = (c & 0xf) - 10 + 'A';
-	else
-		buf[pos+1] = (c & 0xf) + '0';
-	c = (c>>4) & 0xf;
-	if(c > 9)
-		buf[pos]=c - 10 + 'A';
-	else
-		buf[pos] = c+'0';
-	pos += 2;
-}
-
-// кодирование строки для json
-const char* jsonEncode(char* buf, const char *str, size_t max_length) {
-	// size_t len = strlen(str);
-	size_t p = 0, i = 0;
-	byte c;
-
-	while( str[i] != '\0' && p < max_length-8) {
-		// Выделение символа UTF-8 и перевод его в UTF-16 для вывода в JSON
-		// 0xxxxxxx - 7 бит 1 байт, 110xxxxx - 10 бит 2 байта, 1110xxxx - 16 бит 3 байта, 11110xxx - 21 бит 4 байта
-		c = (byte)str[i++];
-		if( c > 127  ) {
-			buf[p++] = '\\';
-			buf[p++] = 'u';
-			// utf8 -> utf16
-			if( c >> 5 == 6 ) {
-				uint16_t cc = ((uint16_t)(str[i-1] & 0x1F) << 6);
-				cc |= (uint16_t)(str[i++] & 0x3F);
-				print_byte(buf, (byte)(cc>>8), p);
-				print_byte(buf, (byte)(cc&0xff), p);
-			} else if( c >> 4 == 14 ) {
-				uint16_t cc = ((uint16_t)(str[i-1] & 0x0F) << 12);
-				cc |= ((uint16_t)(str[i++] & 0x3F) << 6);
-				cc |= (uint16_t)(str[i++] & 0x3F);
-				print_byte(buf, (byte)(cc>>8), p);
-				print_byte(buf, (byte)(cc&0xff), p);
-			} else if( c >> 3 == 30 ) {
-				uint32_t CP = ((uint32_t)(str[i-1] & 0x07) << 18);
-				CP |= ((uint32_t)(str[i++] & 0x3F) << 12);
-				CP |= ((uint32_t)(str[i++] & 0x3F) << 6);
-				CP |= (uint32_t)(str[i++] & 0x3F);
-				CP -= 0x10000;
-				uint16_t cc = 0xD800 + (uint16_t)((CP >> 10) & 0x3FF);
-				print_byte(buf, (byte)(cc>>8), p);
-				print_byte(buf, (byte)(cc&0xff), p);
-				cc = 0xDC00 + (uint16_t)(CP & 0x3FF);
-				print_byte(buf, (byte)(cc>>8), p);
-				print_byte(buf, (byte)(cc&0xff), p);
-			}
-		} else {
-			buf[p++] = c;
-		}
-	}
-
-	buf[p++] = '\0';
-	return buf;
-}
-*/
-
+// информация для первой страницы о состоянии насосов, расходе воды, температуре, влажности
 void full_status() {
 	if(is_no_auth()) return;
 	char buf[100];
@@ -761,6 +756,17 @@ void full_status() {
 	JsonArray sensors = doc["sensors"].to<JsonArray>();
 	for(uint8_t i=0; i<SENSORS; i++) {
 		sensors.add(moi[i].per);
+	}
+	JsonArray slaves = doc["slaves"].to<JsonArray>();
+	uint8_t cur_sl = 0;
+	for(uint8_t i=0; i<MAX_SLAVES; i++) {
+		if (slave[i].registered >= getTimeU() - gs.slave_timeout*60 + 60) {
+			slaves[cur_sl]["num"] = i;
+			slaves[cur_sl]["hostname"] = slave[i].hostname.c_str();
+			slaves[cur_sl]["ip"] = slave[i].ip.toString().c_str();
+			slaves[cur_sl]["timeout"] = gs.slave_timeout*60 + slave[i].registered - getTimeU();
+			cur_sl++;
+		}
 	}
 
 	String jsonPayload;
@@ -820,7 +826,7 @@ cm биты
 128 - включено
 */
 
-void scheduler_save() {
+void schedule_save() {
 	if(is_no_auth()) return;
 	need_save = false;
 	uint8_t target = 0;
@@ -831,8 +837,8 @@ void scheduler_save() {
 		if( HTTP.hasArg(name) ) {
 			// выделение часов и минут из строки вида 00:00
 			uint16_t time = decode_time(HTTP.arg(name));
-			if( scheduler[target].t != time ) {
-				scheduler[target].t = time;
+			if( schedule[target].t != time ) {
+				schedule[target].t = time;
 				need_save = true;
 			}
 		}
@@ -840,8 +846,8 @@ void scheduler_save() {
 		if( HTTP.hasArg(name) ) {
 			// выделение часов и минут из строки вида 00:00
 			uint16_t time = decode_time(HTTP.arg(name));
-			if( scheduler[target].r != time ) {
-				scheduler[target].r = time;
+			if( schedule[target].r != time ) {
+				schedule[target].r = time;
 				need_save = true;
 			}
 		}
@@ -850,40 +856,40 @@ void scheduler_save() {
 		if( HTTP.hasArg(name) ) settings |= constrain(HTTP.arg(name).toInt(), 0, 3) << 5;
 		name = F("sensor");
 		if( HTTP.hasArg(name) ) settings |= constrain(HTTP.arg(name).toInt(), 0, 31); // max 31
-		if( settings != scheduler[target].cm ) {
-			scheduler[target].cm = settings;
+		if( settings != schedule[target].cm ) {
+			schedule[target].cm = settings;
 			need_save = true;
 		}
-		set_simple_int("moi", scheduler[target].cv, 0, 100);
-		set_simple_int("por", scheduler[target].p, 0, 255);
+		set_simple_int("moi", schedule[target].cv, 0, 100);
+		set_simple_int("por", schedule[target].p, 0, 255);
 		uint8_t pumps = 0;
 		char buf[20];
-		for(uint8_t i=0; i<SENSORS; i++) {
+		for(uint8_t i=0; i<PUMPS; i++) {
 			sprintf(buf,"pump%u",i);
 			if( HTTP.hasArg(buf) ) pumps |= 1 << i;
 		}
-		if( pumps != scheduler[target].s ) {
-			scheduler[target].s = pumps;
+		if( pumps != schedule[target].s ) {
+			schedule[target].s = pumps;
 			need_save = true;
 		}
-		// LOG(printf, "scheduler: t=%u, r=%u, cm=%u, cv=%u, p=%u, s=%u, need_save=%i\n",
-		// 	scheduler[target].t, scheduler[target].r, scheduler[target].cm, scheduler[target].cv, scheduler[target].p, scheduler[target].s, need_save);
+		// LOG(printf, "schedule: t=%u, r=%u, cm=%u, cv=%u, p=%u, s=%u, need_save=%i\n",
+		// 	schedule[target].t, schedule[target].r, schedule[target].cm, schedule[target].cv, schedule[target].p, schedule[target].s, need_save);
 	}
-	HTTP.sendHeader("Location", "scheduler.html");
+	HTTP.sendHeader("Location", "schedule.html");
 	HTTP.send(303);
 	delay(1);
-	if( need_save ) save_schedulers();
+	if( need_save ) save_schedules();
 }
 
-void scheduler_off() {
+void schedule_off() {
 	if(is_no_auth()) return;
 	uint8_t target = 0;
 	String name = "t";
 	if( HTTP.hasArg(name) ) {
 		target = HTTP.arg(name).toInt();
-		if( scheduler[target].cm & 128 ) {
-			scheduler[target].cm &= ~(128U);
-			save_schedulers();
+		if( schedule[target].cm & 128 ) {
+			schedule[target].cm &= ~(128U);
+			save_schedules();
 			text_send("1");
 		}
 	} else
@@ -933,4 +939,69 @@ void api() {
 			}
 		}
 	}
+}
+
+// "proxy" отправка сообщений в телеграм через web запрос, для сторонних устройств
+void send() {
+	String name = "pin";
+	if( HTTP.hasArg(name) ) {
+		if( gs.slave_pin == HTTP.arg(name) ) {
+			name = "msg";
+			if( HTTP.hasArg(name) ) {
+				sendMessage(HTTP.arg(name));
+				text_send("1");
+				return;
+			}
+		}
+	}
+	text_send("0");
+}
+
+// Регистрация подчинённого устройства
+void registration() {
+	// Авторизация примитивная, через shared key, или pin
+	// должно быть всего два параметра: pin (shared key) и name - имя устройства
+	String name = "pin";
+	if( HTTP.hasArg(name) ) {
+		if( gs.slave_pin == HTTP.arg(name) ) {
+			// pin подошел
+			name = "name";
+			if( HTTP.hasArg(name) ) {
+				IPAddress slave_ip = HTTP.client().remoteIP();
+				bool fl_found = false;
+				// проверка, зарегистрирован ли уже этот ip
+				for(uint8_t i=0; i<MAX_SLAVES; i++) {
+					if(slave[i].ip == slave_ip) {
+						// надо ли обновить hostname
+						if(slave[i].hostname != HTTP.arg(name))
+							slave[i].hostname = HTTP.arg(name);
+						// обновить время регистрации
+						slave[i].registered = getTimeU();
+						fl_found = true;
+						break;
+					}
+				}
+				if(!fl_found) {
+					// новый подчинённый, поиск свободной ячейки
+					for(uint8_t i=0; i<MAX_SLAVES; i++) {
+						if(slave[i].registered < getTimeU() - gs.slave_timeout*60 - 60) {
+							// найдена свободная ячейка
+							slave[i].hostname = HTTP.arg(name);
+							slave[i].ip = slave_ip;
+							slave[i].registered = getTimeU();
+							fl_found = true;
+							break;
+						}
+					}
+				}
+				if(fl_found) {
+					LOG(printf, "registered \"%s\" ip %s\n", HTTP.arg(name).c_str(), slave_ip.toString().c_str());
+					text_send("1");
+					return;
+				}
+			}
+		}
+	}
+	// любая ошибка, в том числе закончились свободные ячейки
+	text_send("0");
 }

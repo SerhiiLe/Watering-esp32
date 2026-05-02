@@ -21,6 +21,7 @@ enum ActiveChannel {
 
 struct Global_Settings {
 	String host_name = "water"; // название устройства в локальной сети, по умолчанию.
+	uint8_t blink_g = 1; // моргать зелёным светодиодом (heartbeat)
 
 	int8_t tz_shift = TIMEZONE; // временная зона, смещение локального времени относительно Гринвича (часы)
 	uint8_t tz_dst = DSTSHIFT; // смещение летнего времени (часы)
@@ -35,6 +36,8 @@ struct Global_Settings {
 	String hub_name = "clock"; // название хаба, на котором надо регистрироваться
 	String hub_pin = "5528"; // пин для подключения к хабу
 	uint8_t hub_period = 10; // период обновления регистрации (keepalive)
+	String slave_pin = "def555"; // пин-код доступа для подключения подчинённых устройств
+	uint16_t slave_timeout = 20; // время в течении которого подчинённый считается действующим, в минутах
 
 	String tb_name = ""; // имя бота, адрес. Свободная строка, только для справки
 	String tb_chats = ""; // чаты из которых разрешено принимать команды
@@ -46,6 +49,10 @@ struct Global_Settings {
 
 	uint8_t active_channel = ActiveChannel::hub; // канал отправки сообщений
 	String sms_phone = ""; // номера телефона, откуда принимать звонки и команды, первый номер - куда отправлять sms
+	String pin_code = ""; // пин-код для разблокировки SIM. Но лучше его просто отключить.
+	String gprs_APN = "Internet"; // адрес APN, сейчас почти всегда Internet
+	String gprs_user = ""; // логин для подключения к GPRS, сейчас почти всегда пустой
+	String gprs_pass = ""; // пароль для подключения к GPRS, сейчас почти всегда пустой
 
 	String web_login = "admin"; // логин для вэб
 	String web_password = ""; // пароль для вэб
@@ -89,7 +96,7 @@ struct Pump_State {
 };
 extern Pump_State ps[];
 
-struct Scheduler_State {
+struct Schedule_State {
 	uint8_t s = 0; // выбранные насосы (один бит на насос)
 	uint16_t t = 0; // время в минутах от полуночи
 	uint16_t r = 0; // минуты до повтора
@@ -98,7 +105,7 @@ struct Scheduler_State {
 	uint8_t p = 1; // количество порций за одно срабатывание
 	time_t next = 0; // время по utc, в которое таймер должен сработать.
 };
-extern Scheduler_State scheduler[];
+extern Schedule_State schedule[];
 
 struct Average {
 	uint16_t raw = 0; // текущая влажность
@@ -109,12 +116,14 @@ extern Average moi[];
 extern Average battery;
 
 extern esp_chip_info_t chip_info;
+extern SemaphoreHandle_t xMutex;
 extern bool fs_isStarted;
 extern bool fl_5v;
 extern bool wifi_isConnected;
 extern bool wifi_isPortal;
 extern bool fl_timeNotSync;
 extern bool ftp_isAllow;
+extern bool fl_AHTIsInit;
 extern time_t last_telegram;
 
 struct GSM_Info {
@@ -133,6 +142,14 @@ extern GSM_Info gsm;
 #else
 #define SENSORS 0
 #endif
+
+#include <IPAddress.h>
+struct cur_slave {
+	String hostname;
+	IPAddress ip = {0,0,0,0}; // IPADDR_NONE;
+	time_t registered = 0;
+};
+extern cur_slave slave[];
 
 //----------------------------------------------------
 

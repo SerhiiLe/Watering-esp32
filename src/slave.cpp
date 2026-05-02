@@ -35,7 +35,7 @@ IPAddress resolve_ip(const char *resolveName) {
 }
 
 // кодирование строки для GET запросов
-String urlEncode(const char *str) {
+String urlEncode(const char *str, bool params) {
 	size_t len = strlen(str);
 	int buffer_size = len * 3 < TELEGRAM_MAX_LENGTH ? len * 3: TELEGRAM_MAX_LENGTH;
 	char* encodedString = (char*) malloc(buffer_size * sizeof(char));
@@ -46,6 +46,9 @@ String urlEncode(const char *str) {
 	for(unsigned int i=0; i < len; i++) {
 		if(buffer_size+encodedString-p < 3) break;
 		c=str[i];
+		if(params && (c == '&' || c == '=')) {
+			*p++ = c;
+		} else
 		if(isalnum(c)) {
 			*p++ = c;
 		} else {
@@ -69,17 +72,25 @@ String urlEncode(const char *str) {
 	return result;
 }
 // кодирование строки для GET запросов
-String urlEncode(String str) {
-	return urlEncode(str.c_str());
+String urlEncode(String str, bool params) {
+	return urlEncode(str.c_str(), params);
 }
 
 // определение адреса хаба и регистрация на нём
 bool registration_dev() {
+	if (gs.hub_name.length() < 1) return false; // нет имени - нет регистрации
+
+	// одновременные запросы к wifi приводят к перезагрузке, надо блокировать.
+	xSemaphoreTake(xMutex, portMAX_DELAY);
+
 	// найти адрес хаба
 	hub_ip = resolve_ip((gs.hub_name).c_str());
 	// если хаб не найден, то выйти. Может быть найдётся в следующем цикле
-	if(hub_ip == INADDR_NONE) return false;
-
+	if(hub_ip == INADDR_NONE) {
+		xSemaphoreGive(xMutex);
+		return false;
+	}
+	// xSemaphoreTake(xMutex, portMAX_DELAY);
 
 	String serverPath = "http://" + hub_ip.toString() + "/registration?pin=" + gs.hub_pin + "&name=" + urlEncode(gs.host_name);
 
@@ -95,7 +106,7 @@ bool registration_dev() {
 	bool success = true;
 	if (httpResponseCode > 0) {
 		String payload = http.getString();
-		if(payload.charAt(0) != '1') success = false;
+		if(payload[0] != '1') success = false;
 		LOG(printf, "HTTP Response code: %u, payload: %s\n", httpResponseCode, payload);
 	} else {
 		success = false;
@@ -103,6 +114,7 @@ bool registration_dev() {
 	}
 	// Free resources
 	http.end();
+	xSemaphoreGive(xMutex);
 	return success;
 }
 
@@ -111,7 +123,8 @@ bool tb_send_msg(const char *msg) {
 	// если хаб не найден, то выйти.
 	LOG(println,msg);
 	if(hub_ip == INADDR_NONE) return false;
-	// IPAddress ip = {172,16,1,133};
+	
+	xSemaphoreTake(xMutex, portMAX_DELAY);
 
 	bool success = true;
 	String serverPath = "http://" + hub_ip.toString() + "/send";
@@ -131,6 +144,7 @@ bool tb_send_msg(const char *msg) {
 	}
 	// Free resources
 	http.end();
+	xSemaphoreGive(xMutex);
 	return success;
 }
 // отсылка сообщений в телеграм через хаб

@@ -26,9 +26,9 @@
 		<div class="menu">
 			<a href="sysinfo.html">Системная информация</a>
 			<a href="settings.html">Настройки основные</a>
-			<a href="scheduler.html">Расписание полива</a>
+			<a href="schedule.html">Расписание полива</a>
 			<a href="clock.html">Установка времени</a>
-			<a href="moisture.html">Калибровка датчика влажности</a>
+			<a href="moisture.html" class="use_moisture">Калибровка датчика влажности</a>
 			<a href="pump.html">Калибровка насоса</a>
             <a href="clear.html">Удалить настройки</a>
             <a href="clear?t=r" onclick="return confirm('Вы уверены, что хотите перезапустить контроллер?')">Перезагрузка</a>
@@ -52,6 +52,7 @@ function start() {
 		$g("shadow").style.display = "none";
 		onoff('ftp',0);
 		// onoff('calibrate',0);
+		hide_missing_hardware();
 	} else setTimeout(start, 100);
 }
 start();

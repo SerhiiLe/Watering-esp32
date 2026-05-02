@@ -1,13 +1,84 @@
+/*
+	Меню общее для Telegram, Hub, SMS
+*/
+
 #ifndef MENU_H
 #define MENU_H
 
 #include <Arduino.h>
 #include "defines.h"
+#include "menu.h"
 #include "gsm.h"
 #include "ntp.h"
+#include "slave.h"
+#include "web.h"
+#include "settings.h"
+#include <WiFiClient.h>
+#include <HTTPClient.h>
 #ifdef USE_GSM
 #include "gsmApi.h"
 #endif
+
+
+// вывод текущего статуса и статистики по насосам и датчикам влажности
+String print_pumps_status() {
+	String out = "";
+	float sum = 0.0f;
+	for(uint8_t i=0; i<PUMPS; i++) {
+		out += "p:" + String(i+1) + ", c:" + String(ps[i].count) + ", v:" + String(ps[i].vol, 2) + "\n";
+		sum += ps[i].vol;
+	}
+	#ifdef USE_MOISTURE_SENSORS
+	for(uint8_t i=0; i<SENSORS; i++) {
+		out += "s" + String(i+1) + ": " + String(moi[i].per) + "%\n";
+	}
+	#endif
+	out += "sum: " + String(sum, 2) + " liter";
+	return out;
+}
+
+// вывод времени в строку, входной формат - время в минутах с полуночи, на выходе hh:mm
+String print_decoded_time(int t) {
+	int h = t / 60;
+	int m = t % 60;
+	char buf[6];
+	sprintf(buf, "%i:%02i", h, m);
+	return String(buf);
+}
+
+// формирование строки с одной строкой расписания (i - номер расписания, с нуля)
+String print_schedule(uint8_t i) {
+	String out = "";
+	// время  начала срабатывания
+	out += "\n" + String(i+1) + ") " + print_decoded_time(schedule[i].t);
+	// интервал повтора
+	if (schedule[i].r > 0)
+		out += " (" + print_decoded_time(schedule[i].r) + ")";
+	// количество порций
+	if (schedule[i].p > 1)
+		out += " x" + String(schedule[i].p);
+	// список задействованых насосов
+	if (schedule[i].s == (1U<<PUMPS)-1)
+		out += " pAll";
+	else
+		for (uint8_t ii=0; ii<PUMPS; ii++) {
+			if (schedule[i].s & (1<<ii))
+				out += " p" + String(ii+1);
+		}
+	#ifdef USE_MOISTURE_SENSORS
+	// условие срабатывания
+	uint8_t cond = (schedule[i].cm >> 5) & 3;
+	if (cond > 0) {
+		out += " if";
+		uint8_t sensors = schedule[i].cm & 31;
+		if (sensors > 0)
+			out += " s" + String(sensors);
+		out += String(cond == 1? " < ": " > ") + String(schedule[i].cv) + "%";
+	}
+	#endif
+	out += String(schedule[i].cm & 128 ? " On": " Off");
+	return out;
+}
 
 // ────────────────────────────────────────────────────────────────────────────────
 //   Общее меню как для команд из WEB (hub), так и из телеграм, или SMS
@@ -16,8 +87,7 @@ String shared_menu(const String &text) {
     if (text == "/help") { // справка
 		return
 		#ifdef USE_GSM
-		gs.active_channel == 4 ? ( // 
-			"/ping\n"
+		gs.active_channel == 4 ? ( // for SMS
 			"/status\n"
 			"8*n — switch to channel n\n"
 			"/active — active channel\n"
@@ -27,8 +97,8 @@ String shared_menu(const String &text) {
 		) : 
 		#endif
 			(
-			"/ping - проверка связи\n"
-			"/status - состояние модема\n"
+			"/status - состояние устройства\n"
+			"/schedule - расписание\n"
 			"/slave - переключится на хаб\n"
 			"/wifi - переключится на WiFi\n"
 			#ifdef USE_GSM
@@ -43,9 +113,8 @@ String shared_menu(const String &text) {
 			"8*n - переключить канал сообщений n\n"
 			"/help - это меню"
 		);
-    } else if (text == "/ping") {
-		return "Pong!";
-	} else if (text == "/status") {
+    }
+	if (text == "/status") {
 		char buf[100];
 		String uptime = String(getUptime(buf));
 		String power = "";
@@ -58,30 +127,38 @@ String shared_menu(const String &text) {
 		#ifdef USE_GSM
 		if (gsm.isSleep) gsm_wake();
 		#endif
+		String slaves = "";
+		for(uint8_t i=0; i<MAX_SLAVES; i++) {
+			if(slave[i].registered >= getTimeU() - gs.slave_timeout*60) {
+				slaves += "\n/" + String(i) + " " + slave[i].hostname;
+			}
+		}
 		return (
 		#ifdef USE_GSM
 			"GSM info: " + gsm.info + "\n"
 			"Signal: "   + gsm.rssi + " dBm\n" +
 		#endif
-			power + "Uptime: "   + uptime
+			power + "Uptime: " + uptime + slaves
 		);
-	} else if (text == "/slave") {
+	}
+	if (text == "/slave")
 		return switchActiveChannel(ActiveChannel::hub);
-	} else if (text == "/wifi") {
+	if (text == "/wifi")
 		return switchActiveChannel(ActiveChannel::wifi);
 	#ifdef USE_GSM
-	} else if (text == "/gprs") {
+	if (text == "/gprs")
 		return switchActiveChannel(ActiveChannel::gprs);
-	} else if (text == "/sms") {
+	if (text == "/sms")
 		return switchActiveChannel(ActiveChannel::sms);
-	} else if (text == "/unread_sms") {
+	if (text == "/unread_sms") {
 		if (gsm.isSleep) gsm_wake();
 		requestAllSMS();
 		return "Все SMS прочитаны";
+	}
 	#endif
-	} else if (text == "/active") {
+	if (text == "/active")
 		return "active channel: " + String(gs.active_channel);
-	} else if (text.startsWith("1*")) {
+	if (text.startsWith("1*")) { // запуск насоса (1*n где n=0 - все насосы, n=X - насос номер X)
 		int f = text.lastIndexOf("*");
 		int t = text.indexOf("#");
 		String pn = (t < 0) ? text.substring(f+1): text.substring(f,t);
@@ -98,30 +175,151 @@ String shared_menu(const String &text) {
 			}
 		}
 		return "water " + (a==0 ? "all":pn) + " ok";
-	} else if (text.startsWith("8*")) {
+	}
+	if (text.startsWith("8*")) { // переключение канала обратной связи (8*n где 0-нет, 1-hub, 2-telegram/web, 3-telegram/gprs, 4-SMS)
 		int f = text.lastIndexOf("*");
 		int t = text.indexOf("#");
 		String pn = (t < 0) ? text.substring(f+1): text.substring(f,t);
 		return switchActiveChannel(pn.length() < 1 ? 100: pn.toInt());
-	} else if (text == "/pumps") {
-		// отправка сообщения с текущим статусом
-		String out = gs.host_name;
-		float sum = 0.0f;
-		for(uint8_t i=0; i<PUMPS; i++) {
-			out += "\np: " + String(i+1) + ", c: " + String(ps[i].count) + ", v: " + String(ps[i].vol, 2);
-			sum += ps[i].vol;
+	}
+	if (text == "/pumps") // отправка сообщения с текущим статусом полива
+		return print_pumps_status();
+	if (text.charAt(0) >= '0' && text.charAt(0) <= '9') {
+		// запрос внешнего датчика
+		int8_t n = text.charAt(0) - 48;
+		if(slave[n].registered >= getTimeU() - gs.slave_timeout*60) {
+			String url = String("http://") + slave[n].ip.toString() + String("/api?pin=") + gs.slave_pin + "&";
+			int pos = 1;
+			int len = text.length();
+			if(len<2) {
+				url += "help";
+			} else {
+				for(; pos<len; pos++)
+					if (text[pos] != ' ') break;
+				int pos2 = text.indexOf("=");
+				bool fl_free_cmd = text.indexOf(' ',pos) > 0 || text.indexOf('*',pos) > 0;
+				if(!fl_free_cmd && pos2>0) {
+					url += text.substring(pos,pos2+1);
+					if(pos2+1 < len)
+						url += urlEncode(text.substring(pos2+1), true);
+				} else {
+					if (fl_free_cmd || text[pos] == '/')
+						url += F("cmd=");
+					url += urlEncode(text.substring(pos));
+					if (text[pos] != '/' && !fl_free_cmd)
+						url += "=";
+				}
+			}
+			LOG(println, url);
+			WiFiClient client;
+			HTTPClient html;
+			html.begin(client, url.c_str());
+			int httpResponseCode = html.GET();
+			String res;
+			if (httpResponseCode == 200) {
+				// ответ от датчика запихивается сразу в telegram, обработку делает FastBot
+				res = slave[n].hostname + "\n" + html.getString();
+			} else {
+				res = slave[n].hostname + " error: " + String(httpResponseCode);
+			}
+			// Free resources
+			html.end();
+			return res;
+		} else {
+			return "датчик неактивен";
 		}
-		out += "\nsum: " + String(sum, 2) + " liter";
-		#ifdef USE_MOISTURE_SENSORS
-		for(uint8_t i=0; i<SENSORS; i++) {
-			out += "\ns" + String(i+1) + ": " + String(moi[i].per) + "%";
+	}
+	if (text == "/schedule") { // вывод текущего расписания
+		String all_sh = "schedule:";
+		for (uint8_t i=0; i<SCHEDULES; i++) {
+			all_sh += print_schedule(i);
 		}
-		#endif
-		#ifdef PIN_BAT
-		out += "\nbat: " + String(battery.per) + "%";
-		#endif
-		return out;
-    }
+		return all_sh;
+	}
+	if (text[0] == 'e' && isDigit(text[1]) ) { // изменение конкретного номера расписания
+		int currentPos = 0;
+		String token;
+		Schedule_State *ss = nullptr;
+		uint8_t active = 0;
+		bool is_init = false; // защита от смены номера расписания при многократном вхождении "eN"
+		bool is_init_pumps = false;
+		// Разбиваем строку на токены по пробелам
+    	while (currentPos < text.length()) {
+        	int spacePos = text.indexOf(' ', currentPos);
+			if (spacePos == -1) { // строка закончилась, возможный последний параметр
+				token = text.substring(currentPos);
+				currentPos = text.length();
+			} else { // вырезаем из строки один параметр и обрезаем на него строку
+				token = text.substring(currentPos, spacePos);
+				currentPos = spacePos + 1;
+			}
+
+			if (token.length() == 0) continue; // повторные пробелы
+
+			LOG(printf, "\"%s\" ", token.c_str());
+
+			// разбор параметров вида буква+цифра
+			if (token.length() >= 2 && isAlpha(token[0]) && isDigit(token[1])) {
+				char p = token[0];
+				int v = token.substring(1).toInt();
+				// значение получено, определяем куда его надо вставить
+				if (p == 'e' && !is_init) { // это номер расписания
+					if (v < 1 || v > SCHEDULES) return "wrong schedule number";
+					ss = &schedule[v-1];
+					is_init = true;
+					active = v-1;
+				} else {
+					if (is_init) {
+						if (p=='p') { // это номер помпы 
+							if (v < 1 || v > PUMPS) continue; // параметр некорректен, пропуск
+							if (!is_init_pumps) { // есть параметр с насосом. Значит обнуляем текущее значение
+								ss->s = 0;
+								is_init_pumps = true;
+							}
+							if (v) ss->s |= 1<<(v-1); 
+						} else if (p=='s') {
+							if (v > SENSORS) continue;
+							ss->cm &= ~(31U);
+							ss->cm |= (v & 31); // max 31
+						} else if (p=='x') {
+							ss->p = constrain(v, 1, 255);
+						}
+					}
+				}
+			} else { // разбор остальных параметров со свободным форматом
+				if (is_init) {
+					if (token.indexOf(':') != -1) {
+						if (token.startsWith("(")) { // время начала
+							ss->r = decode_time(token.substring(1));
+						} else { // период повтора
+							ss->t = decode_time(token);
+						}
+					} else if (token.startsWith("p")) { // все насосы
+						ss->s = 0;
+						for (uint8_t i=0; i<PUMPS; i++) ss->s |= 1<<i;
+					} else if (token == "s") { // сенсор без указания номера - среднее
+						ss->cm &= ~(31U);
+					} else if (token == "<") {
+						ss->cm &= ~(3 << 5);
+						ss->cm |= 1 << 5;
+					} else if (token == ">") {
+						ss->cm &= ~(3 << 5);
+						ss->cm |= 2 << 5;
+					} else if (token == "=" || token.startsWith("noif")) { // отключить условие
+						ss->cm &= ~(3 << 5);
+					} else if (token.startsWith("on")) {
+						ss->cm |= 128U;
+					} else if (token.startsWith("off")) {
+						ss->cm &= ~(128U);
+					} else if (token.endsWith("%")) {
+						ss->cv = constrain(token.toInt(), 0, 100);
+					}
+				}
+			}
+		}
+		save_schedules();
+		return "save:" + print_schedule(active);
+	}
 	return "unknow command";
 }
 

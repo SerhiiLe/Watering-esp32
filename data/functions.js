@@ -53,30 +53,6 @@ function toggle_edit(n,url) {
 		ajaxRequest(url, "POST", "t="+n, dummy, dummy);
 	}
 };
-function calcLen(num, limit) {
-	cnt = $g("cc"+num);
-	int = $g("in"+num);
-	if(!int) return;
-	c = 0;
-	lc = 0;
-	for(var i=0; i<int.value.length; i++) {
-		chr = int.value.codePointAt(i);
-		if(chr > 16777216) c += 4;
-		else if(chr > 65536) c += 3;
-		else if(chr > 256) c += 2;
-		else c++;
-		if(limit < c) {
-			lc = i;
-			break;
-		}
-	}
-	if(cnt) cnt.innerHTML = limit - c;
-	if(lc > 0) {
-		var new_text = int.value.substring(0,lc);
-		int.value = new_text;
-		calcLen(num, limit);
-	} 
-}
 function onoff(id,a=1) {
 	ajaxRequest("onoff","POST","t="+id+"&a="+a, function(ajaxResp) {
 		$g(id).innerHTML = ajaxResp.responseText=="1" ? "On": "Off";
@@ -103,3 +79,9 @@ function fill_settings(url,form_name,cbfunc=null) {
 		if(cbfunc !== null) cbfunc();
 	}, dummy);
 };
+function hide_missing_hardware() {
+	ajaxRequest("hw_info", "GET", null, function(ajaxResp) {
+		var doc = JSON.parse(ajaxResp.responseText);
+		for (var key in doc) toggle_by_class(key, doc[key]);
+	}, dummy);
+}

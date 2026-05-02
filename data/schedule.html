@@ -3,7 +3,7 @@
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>Watering machine scheduler</title>
+		<title>Watering machine schedule</title>
 		<style>
 			div#shadow {background-color:rgba(0,0,0,0.8); z-index:2000; width:100%; height:100%; position:absolute; left:0; top:0;}
 			div#shadow div {position: absolute; top: 50%; transform: translate(-50%, -50%); left: 50%; margin-right: -50%; font-size: x-large; color: yellow;}
@@ -35,7 +35,7 @@
 				</tbody>
 			</table>
 			<div id="edit" style="display:none;">
-				<form action="scheduler_save" autocomplete="off" method="post" name="settings">
+				<form action="schedule_save" autocomplete="off" method="post" name="settings">
 					<input type="hidden" name="target" value="0">
 					<div class="holder narrow">
 						<div class="row">
@@ -51,8 +51,8 @@
 							<div>
 								<select name="mode" id="mode" onchange="select_conditions()">
 									<option value="0">без условий</option>
-									<option value="1">если влажность меньше</option>
-									<option value="2">если влажность больше</option>
+									<option value="1" class="use_moisture">если влажность меньше</option>
+									<option value="2" class="use_moisture">если влажность больше</option>
 								</select>
 							</div>
 						</div>
@@ -127,7 +127,7 @@ function print_time(i) {
 }
 function start() {
 	if (typeof ajaxRequest !== "undefined") {
-		ajaxRequest("scheduler.json", "GET", null, function(ajaxResp) {
+		ajaxRequest("schedule.json", "GET", null, function(ajaxResp) {
 			doc = JSON.parse(ajaxResp.responseText);
 			const d = doc.data;
 			const li = $g("list_items");
@@ -136,7 +136,7 @@ function start() {
 				const sp2 = $em("span",[" ",d[i].r ? print_time(d[i].r): "1 день"],{class:"small"});
 				if( d[i].p > 1 ) sp2.innerHTML += " x" + d[i].p;
 				const sp3 = $e("div",{class:"small top_line"});
-				if(d[i].s == 7) {
+				if(d[i].s == (1 << doc.pc) - 1) {
 					sp3.innerHTML = "Все";
 				} else if(d[i].s) {
 					var bit = 1;
@@ -152,7 +152,7 @@ function start() {
 				}
 				let fl = d[i].cm & (1<<7);
 				const td1 = $em("td",[sp1,sp2,sp3],{class:(fl?"on":"off"),id:"t"+i,onclick:"show_edit("+i+")"});
-				const input = $e("input",{type:"checkbox",id:"e"+i,onchange:"toggle_edit("+i+",'scheduler_off')"});
+				const input = $e("input",{type:"checkbox",id:"e"+i,onchange:"toggle_edit("+i+",'schedule_off')"});
 				if(fl) input.checked = true;
 				li.appendChild($em("tr",[td1,$ee("td",input)]));
 			}
@@ -165,6 +165,7 @@ function start() {
 			],{class:"row"}));
 
 			$g("shadow").style.display = "none";
+			hide_missing_hardware();
 		}, dummy);
 	} else setTimeout(start, 100);
 }

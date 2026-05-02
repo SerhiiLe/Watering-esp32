@@ -2,7 +2,7 @@
 #define shiftReg_h
 
 void sR_init();
-void sR_go();
+void sR_go(bool force=false);
 
 void sR_write(uint8_t pin, uint8_t state);
 int sR_read(uint8_t pin);

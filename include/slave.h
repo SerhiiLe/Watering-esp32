@@ -3,8 +3,8 @@
 
 bool registration_dev();
 void resolver_loop();
-String urlEncode(const char *str);
-String urlEncode(String str);
+String urlEncode(const char *str, bool params = false);
+String urlEncode(String str, bool params = false);
 bool tb_send_msg(const char *msg);
 bool tb_send_msg(String msg);
 

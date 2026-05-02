@@ -9,5 +9,7 @@ void setup_telegram();
 
 String switchActiveChannel(uint8_t ch);
 String shared_menu(const String &text);
+String print_pumps_status();
+String print_decoded_time(int t);
 
 #endif

@@ -83,3 +83,8 @@ void wifi_startConfig(bool fl) {
 			led.blink(ON,100,3);
 	}
 }
+
+void foget_wifi() {
+	LOG(println, "Foget WiFi settings!");
+	wm.resetSettings(); // Удаляет сохраненные настройки
+}

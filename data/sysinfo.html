@@ -33,11 +33,11 @@
 					<div>Time</div>
 					<div id="DateTime"></div>
 				</div>
-				<div class="row">
+				<div class="row use_5v">
 					<div>Power</div>
 					<div id="fl_5v"></div>
 				</div>
-				<div class="row">
+				<div class="row use_battary">
 					<div>Battery</div>
 					<div><span id="Battery"></span>% (<span id="Battery_raw"></span>)</div>
 				</div>
@@ -49,13 +49,17 @@
 					<div>IP</div>
 					<div id="IP"></div>
 				</div>
-				<div class="row">
+				<div class="row use_gsm">
 					<div>GSM info</div>
 					<div id="gsm_info"></div>
 				</div>
-				<div class="row">
+				<div class="row use_gsm">
 					<div>GSM signal</div>
 					<div><span id="gsm_rssi"></span>% (status: <span id="gsm_status"></span>)</div>
+				</div>
+				<div class="row use_aht">
+					<div>AHTx0</div>
+					<div id="aht"></div>
 				</div>
 				<div class="row">
 					<div>Free Heap</div>
@@ -132,6 +136,7 @@ function start() {
 	if (typeof ajaxRequest !== "undefined") {
 		getInfo( () => {
 			$g("shadow").style.display = "none";
+			hide_missing_hardware();
 		});
 	} else setTimeout(start, 100);
 }

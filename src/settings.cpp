@@ -14,7 +14,7 @@
 Global_Settings gs; // определение структуры глобальной (главной) конфигурации
 Moisture_Calibrate mc[SENSORS]; // калибровка датчиков влажности
 Log_State ls; // состояние журнала
-Scheduler_State scheduler[SCHEDULERS]; // состояние расписания
+Schedule_State schedule[SCHEDULES]; // состояние расписания
 Pump_Calibrate pc; // калибровка насосов
 
 bool load_config_main() {
@@ -45,6 +45,7 @@ bool load_config_main() {
 	// double longitude = doc["data"][1];
 
 	gs.host_name = doc["host_name"].as<String>();
+	gs.blink_g = doc["blink_g"];
 	
 	gs.tz_shift = doc["tz_shift"];
 	gs.tz_dst = doc["tz_dst"];
@@ -61,6 +62,8 @@ bool load_config_main() {
 	gs.hub_name = doc["hub_name"].as<String>();
 	gs.hub_pin = doc["hub_pin"].as<String>();
 	gs.hub_period = doc["hub_period"];
+	gs.slave_pin = doc["slave_pin"].as<String>();
+	gs.slave_timeout = doc["slave_timeout"];
 
 	gs.tb_name = doc["tb_name"].as<String>();
 	gs.tb_chats = doc["tb_chats"].as<String>();
@@ -71,6 +74,10 @@ bool load_config_main() {
 	gs.tb_ban = doc["tb_ban"];
 
 	gs.sms_phone = doc["sms_phone"].as<String>();
+	gs.pin_code = doc["pin_code"].as<String>();
+	gs.gprs_APN = doc["gprs_apn"].as<String>();
+	gs.gprs_user = doc["gprs_user"].as<String>();
+	gs.gprs_pass = doc["gprs_pass"].as<String>();
 
 	gs.web_login = doc["web_login"].as<String>();
 	gs.web_password = doc["web_password"].as<String>();
@@ -85,6 +92,7 @@ void save_config_main() {
 	JsonDocument doc; // временный буфер под объект json
 
 	doc["host_name"] = gs.host_name;
+	doc["blink_g"] = gs.blink_g;
 	
 	doc["tz_shift"] = gs.tz_shift;
 	doc["tz_dst"] = gs.tz_dst;
@@ -101,6 +109,8 @@ void save_config_main() {
 	doc["hub_name"] = gs.hub_name;
 	doc["hub_pin"] = gs.hub_pin;
 	doc["hub_period"] = gs.hub_period;
+	doc["slave_pin"] = gs.slave_pin;
+	doc["slave_timeout"] = gs.slave_timeout;
 
 	doc[F("tb_name")] = gs.tb_name;
 	doc[F("tb_chats")] = gs.tb_chats;
@@ -111,6 +121,10 @@ void save_config_main() {
 	doc[F("tb_ban")] = gs.tb_ban;
 
 	doc["sms_phone"] = gs.sms_phone;
+	doc["pin_code"] = gs.pin_code;
+	doc["gprs_apn"] = gs.gprs_APN;
+	doc["gprs_user"] = gs.gprs_user;
+	doc["gprs_pass"] = gs.gprs_pass;
 
 	doc["web_login"] = gs.web_login;
 	doc["web_password"] = gs.web_password;
@@ -243,11 +257,11 @@ void save_pump_calibration() {
 }
 
 // чтение расписания
-bool load_schedulers() {
-	File configFile = LittleFS.open("/scheduler.json", "r");
+bool load_schedules() {
+	File configFile = LittleFS.open("/schedule.json", "r");
 	if (!configFile) {
 		// если файл не найден  
-		LOG(println, "Failed to open config for scheduler file");
+		LOG(println, "Failed to open config for schedule file");
 		return false;
 	}
 
@@ -263,43 +277,43 @@ bool load_schedulers() {
 	}
 
 	if(!doc["data"].is<JsonArray>()) return false;
-	for( int i=0; i<min((int)SCHEDULERS,(int)doc["data"].size()); i++) {
-		scheduler[i].s = doc["data"][i]["s"];
-		scheduler[i].t = doc["data"][i]["t"];
-		scheduler[i].r = doc["data"][i]["r"];
-		scheduler[i].cm = doc["data"][i]["cm"];
-		scheduler[i].cv = doc["data"][i]["cv"];
-		scheduler[i].p = doc["data"][i]["p"];
+	for( int i=0; i<min((int)SCHEDULES,(int)doc["data"].size()); i++) {
+		schedule[i].s = doc["data"][i]["s"];
+		schedule[i].t = doc["data"][i]["t"];
+		schedule[i].r = doc["data"][i]["r"];
+		schedule[i].cm = doc["data"][i]["cm"];
+		schedule[i].cv = doc["data"][i]["cv"];
+		schedule[i].p = doc["data"][i]["p"];
 	}
 	return true;
 }
 
 // запись расписания
-void save_schedulers() {
+void save_schedules() {
 	JsonDocument doc; // временный буфер под объект json
 
 	doc["pc"] = PUMPS;
 	doc["sc"] = SENSORS;
 	JsonArray data = doc["data"].to<JsonArray>();
-	for( int i=0; i<SCHEDULERS; i++) {
-		data[i]["s"] = scheduler[i].s;
-		data[i]["t"] = scheduler[i].t;
-		data[i]["r"] = scheduler[i].r;
-		data[i]["cm"] = scheduler[i].cm;
-		data[i]["cv"] = scheduler[i].cv;
-		data[i]["p"] = scheduler[i].p;
+	for( int i=0; i<SCHEDULES; i++) {
+		data[i]["s"] = schedule[i].s;
+		data[i]["t"] = schedule[i].t;
+		data[i]["r"] = schedule[i].r;
+		data[i]["cm"] = schedule[i].cm;
+		data[i]["cv"] = schedule[i].cv;
+		data[i]["p"] = schedule[i].p;
 	}
 
-	File configFile = LittleFS.open("/scheduler.json", "w"); // открытие файла на запись
+	File configFile = LittleFS.open("/schedule.json", "w"); // открытие файла на запись
 	if (!configFile) {
-		LOG(println, "Failed to open scheduler.json for writing");
+		LOG(println, "Failed to open schedule.json for writing");
 		return;
 	}
 	serializeJson(doc, configFile); // Записываем строку json в файл
 	configFile.flush();
 	configFile.close(); // не забыть закрыть файл
 	delay(2);
-	LOG(println, "save /scheduler.json");
+	LOG(println, "save /schedule.json");
 }
 
 bool load_pump_state() {

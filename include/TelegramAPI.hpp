@@ -38,7 +38,7 @@ class TelegramAPI {
 
 	// период опроса в секундах. Каждая установка сбрасывает время отсчёта.
 	void setInterval(int interval) {
-		if ( interval > 1 ) updatePeriod = interval * 1000; // чаще, чем раз в секунду
+		if ( interval > 1 ) updatePeriod = interval * 1000UL; // чаще, чем раз в секунду
 		resetTimer();
 	}
 	
@@ -261,25 +261,17 @@ class TelegramAPI {
 	
 	// возвращает true, когда пришло время.
 	bool isReady() {
-		unsigned long time = millis();
-		if(_overflow) { // попытка защититься от переполнения
-			if(time < lastUpdate) // ждём переполнения, которое наступает каждые 49 дней
-				_overflow = false;
-			else
-				return false;
-		}
-		if(time >= nextUpdate) {
+		uint32_t time = millis();
+		if((int32_t)(time - nextUpdate) > 0) {
 			resetTimer();
 			return true;
-		} else {
-			return false;
 		}
+		return false;
 	}
 	// сброс таймера на установленный интервал
 	void resetTimer() {
 		lastUpdate = millis();
 		nextUpdate = lastUpdate + updatePeriod;
-		_overflow = lastUpdate > nextUpdate; 
 	}
 
 	SSLClient& client;    // Ссылка на SSLClient
@@ -289,8 +281,8 @@ class TelegramAPI {
 	const int requestTimeout = 35000; // Таймаут для long polling (35 секунд, учитывая timeout=30)
 
 	long lastUpdateId = 0;
-	unsigned long _chatId = 0, lastUpdate = 0, nextUpdate = 0;
-	unsigned int updatePeriod = 10000;
+	uint32_t _chatId = 0, lastUpdate = 0, nextUpdate = 0;
+	uint32_t updatePeriod = 10000;
 	bool _overflow = false;
 
 	const char* apiHost; // = "api.telegram.org";

@@ -63,7 +63,7 @@ function new_info() {
 var s_count = 0;
 function start() {
 	if (typeof ajaxRequest !== "undefined") {
-		ajaxRequest("moisture.json", "GET", null, function(ajaxResp) {
+		ajaxRequest("moisture_json", "GET", null, function(ajaxResp) {
 			var doc = JSON.parse(ajaxResp.responseText);
 			var f = document.forms["settings"];
 			var holder = $g("holder");
