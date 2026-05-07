@@ -184,9 +184,9 @@ String shared_menu(const String &text) {
 	}
 	if (text == "/pumps") // отправка сообщения с текущим статусом полива
 		return print_pumps_status();
-	if (text.charAt(0) >= '0' && text.charAt(0) <= '9') {
+	if (isDigit(text[0])) {
 		// запрос внешнего датчика
-		int8_t n = text.charAt(0) - 48;
+		int8_t n = constrain(text.toInt(), 0, MAX_SLAVES-1);
 		if(slave[n].registered >= getTimeU() - gs.slave_timeout*60) {
 			String url = String("http://") + slave[n].ip.toString() + String("/api?pin=") + gs.slave_pin + "&";
 			int pos = 1;
@@ -198,7 +198,7 @@ String shared_menu(const String &text) {
 					if (text[pos] != ' ') break;
 				int pos2 = text.indexOf("=");
 				bool fl_free_cmd = text.indexOf(' ',pos) > 0 || text.indexOf('*',pos) > 0;
-				if(!fl_free_cmd && pos2>0) {
+				if (!fl_free_cmd && pos2>0) {
 					url += text.substring(pos,pos2+1);
 					if(pos2+1 < len)
 						url += urlEncode(text.substring(pos2+1), true);

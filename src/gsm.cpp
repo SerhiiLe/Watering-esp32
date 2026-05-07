@@ -349,7 +349,7 @@ String handleMessage(TResult &t) {
 
 	t.text.toLowerCase();
 
-	if (t.text.charAt(0) == '/' && isDigit(t.text.charAt(1))) { //} >= '0' && t.text.charAt(1) <= '9') {
+	if (t.text[0] == '/' && isDigit(t.text[1])) {
 		String n = "pin " + t.text.substring(1);
 		t.text = n;
 		LOG(println, "rewrite to: " + t.text);
