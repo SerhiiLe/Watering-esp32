@@ -156,8 +156,10 @@ String shared_menu(const String &text) {
 		return "Все SMS прочитаны";
 	}
 	#endif
-	if (text == "/active")
-		return "active channel: " + String(gs.active_channel);
+	if (text == "/active") {
+		const char *ch[] = {"none", "hub", "telegram/WiFi", "telegram/GPRS", "SMS"};
+		return "active channel: " + String(gs.active_channel) + " - " + ch[gs.active_channel];
+	}
 	if (text.startsWith("1*")) { // запуск насоса (1*n где n=0 - все насосы, n=X - насос номер X)
 		int f = text.lastIndexOf("*");
 		int t = text.indexOf("#");
@@ -311,7 +313,7 @@ String shared_menu(const String &text) {
 						ss->cm |= 128U;
 					} else if (token.startsWith("off")) {
 						ss->cm &= ~(128U);
-					} else if (token.endsWith("%")) {
+					} else if (token.indexOf('%') != -1) {
 						ss->cv = constrain(token.toInt(), 0, 100);
 					}
 				}

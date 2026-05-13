@@ -2,14 +2,15 @@
 	Файл с определением основной логики приёма/отправки сообщений.
 */
 #include <Arduino.h>
-#include <SSLClient.h>
 #include "defines.h"
+#include <SSLClient.h>
+#include <TelegramAPI.h>
 #include "slave.h"
 #include "ntp.h"
-#include "TelegramAPI.hpp"
 #include <WiFi.h>
 #include "cert.h"
 #include "gsm.h"
+#include "settings.h"
 
 #define MODEM_UART_BAUD 115200
 
@@ -67,7 +68,7 @@ WiFiClient webTransportLayer;
 // SSLClient securePresentationLayer(&gsmTransportLayer);
 SSLClient securePresentationLayer(&webTransportLayer); // транспорт по умолчанию wifi, но потом он меняется вместе с каналом
 
-TelegramAPI tg(securePresentationLayer);
+TelegramAPI<SSLClient> tg(securePresentationLayer);
 
 
 bool fl_gprs = false; // отправка сообщений через gprs
@@ -113,7 +114,7 @@ void setup2() {
 	// Set SIM module baud rate and UART pins
 	gsmSerial.begin(MODEM_UART_BAUD, SERIAL_8N1, PIN_gsmRX, PIN_gsmTX);
 
-	// securePresentationLayer.setCACert(TELEGRAM_CA_CERT);
+	securePresentationLayer.setCACert(TELEGRAM_CA_CERT);
 
 	// Настройка/инициализация PIN на работу с модемом
 	LOG(println, "Setup modem");
@@ -269,6 +270,7 @@ void messagePool() {
 // переключение активного канала
 String switchActiveChannel(uint8_t ch) {
 	String result;
+	uint8_t old_channel = gs.active_channel;
 	switch (ch) {
 		case ActiveChannel::none: // ничего не отсылать
 			break;
@@ -328,6 +330,7 @@ String switchActiveChannel(uint8_t ch) {
 				#endif
 			);
 	}
+	if (old_channel != gs.active_channel) save_config_main();
 	LOG(println, result);
 	return result;
 }
@@ -346,6 +349,7 @@ String handleMessage(TResult &t) {
 	last_telegram = getTimeU();
 	LOG(printf, "last_telegram=%u\n", last_telegram);
 
+	const char *start_menu = "[MENU]/status\t/pumps\t/schedule\n/active\t/help";
 
 	t.text.toLowerCase();
 
@@ -357,23 +361,30 @@ String handleMessage(TResult &t) {
 
 	if (t.text.endsWith("unpin") || t.text == "/") {
 		pinned = -1;
-		return "Welcome back to";
+		return "Welcome back to" + String(start_menu);
 	}
 	if (t.text.startsWith("pin")) {
 		int n = constrain(t.text.substring(t.text.lastIndexOf(" ")).toInt(), 0, MAX_SLAVES-1);
 		if (slave[n].registered >= getTimeU() - gs.slave_timeout*60) {
 			pinned = n;
-			return "Pinned " + String(pinned) + "\n/Unpin for back\n/Help";
+			return "Pinned " + String(pinned) + "\n/Unpin for back\n/Help[MENU]unpin\t/help";
 		} else
 			return "format:\npin n\nn=0..9";
 	}
-	if (t.text == "/start") {
+	int sp = t.text.indexOf("start");
+	if (sp == 0 || sp == 1)
 		return (
 			"Hi, " + t.from + "!\n\n"
 			"/chatid - show ChatID\n"
-			"/help - show help"
-			);
-	}
+			"/help - show help" + String(start_menu)
+		);
+	sp = t.text.indexOf("stop");
+	if (sp == 0 || sp == 1)
+		return (
+			"start - show menu\n"
+			"stop - remove menu\n"
+			"[MENU]"
+		);
 	if (t.text == "/chatid")
 		return "ChatID: " + String(t.chatId);
 

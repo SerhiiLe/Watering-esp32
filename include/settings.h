@@ -11,14 +11,5 @@ bool load_schedules();
 void save_schedules();
 bool load_pump_state();
 void save_pump_state();
-bool load_config_log();
-void save_config_log();
-void save_log_file(const char* text);
-void save_log_file(String text);
-
-#define LOG_MAX 50		// максимальная строка одной записи лога (45 + символы склейки "%0A" + конец строки \0)
-#define LOG_SIZE 4096	// максимальный размер файла, после которого запись будет во второй файл. (запись по кругу)
-#define LOG_COUNT 3		// число файлов
-const char LOG_FILE[] PROGMEM = "/log%u.txt"; // шаблон имени файла
 
 #endif

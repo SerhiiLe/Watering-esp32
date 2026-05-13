@@ -90,7 +90,6 @@ bool registration_dev() {
 		xSemaphoreGive(xMutex);
 		return false;
 	}
-	// xSemaphoreTake(xMutex, portMAX_DELAY);
 
 	String serverPath = "http://" + hub_ip.toString() + "/registration?pin=" + gs.hub_pin + "&name=" + urlEncode(gs.host_name);
 
