@@ -335,6 +335,12 @@ String switchActiveChannel(uint8_t ch) {
 	return result;
 }
 
+// поиск параметра не зависимо от наличия "/" в начале
+bool is_command(const String& in, const String& command) {
+	int pos = in.indexOf(command);
+	return pos==0 || pos==1;
+}
+
 // ────────────────────────────────────────────────────────────────────────────────
 //  Обработчик команд пришедших из телеграм.
 //  Туда и ответы сразу отсылаются, в обход очереди
@@ -359,11 +365,11 @@ String handleMessage(TResult &t) {
 		LOG(println, "rewrite to: " + t.text);
 	}
 
-	if (t.text.endsWith("unpin") || t.text == "/") {
+	if (is_command(t.text, "unpin") || t.text == "/") {
 		pinned = -1;
 		return "Welcome back to" + String(start_menu);
 	}
-	if (t.text.startsWith("pin")) {
+	if (is_command(t.text, "pin")) {
 		int n = constrain(t.text.substring(t.text.lastIndexOf(" ")).toInt(), 0, MAX_SLAVES-1);
 		if (slave[n].registered >= getTimeU() - gs.slave_timeout*60) {
 			pinned = n;
@@ -371,21 +377,19 @@ String handleMessage(TResult &t) {
 		} else
 			return "format:\npin n\nn=0..9";
 	}
-	int sp = t.text.indexOf("start");
-	if (sp == 0 || sp == 1)
+	if (is_command(t.text, "start"))
 		return (
 			"Hi, " + t.from + "!\n\n"
 			"/chatid - show ChatID\n"
 			"/help - show help" + String(start_menu)
 		);
-	sp = t.text.indexOf("stop");
-	if (sp == 0 || sp == 1)
+	if (is_command(t.text, "stop"))
 		return (
 			"start - show menu\n"
 			"stop - remove menu\n"
 			"[MENU]"
 		);
-	if (t.text == "/chatid")
+	if (is_command(t.text, "chatid"))
 		return "ChatID: " + String(t.chatId);
 
 	if (pinned >= 0 && (! isDigit(t.text[0] || t.text.indexOf("*") > 0 ))) {
@@ -397,7 +401,7 @@ String handleMessage(TResult &t) {
 	if (t.text.length() > 0 && isWhitelisted(String(t.chatId), gs.tb_chats))
 		return shared_menu(t.text);
 
-	if (t.text == "/help")
+	if (is_command(t.text, "help"))
 		return "for registered users only";
 
 	return "Эхо: " + t.text;

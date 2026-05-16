@@ -15,6 +15,7 @@
 #include "settings.h"
 #include <WiFiClient.h>
 #include <HTTPClient.h>
+#include "temperature.h"
 #ifdef USE_GSM
 #include "gsmApi.h"
 #endif
@@ -84,7 +85,7 @@ String print_schedule(uint8_t i) {
 //   Общее меню как для команд из WEB (hub), так и из телеграм, или SMS
 // ────────────────────────────────────────────────────────────────────────────────
 String shared_menu(const String &text) {
-    if (text == "/help") { // справка
+    if (is_command(text, "help")) { // справка
 		return
 		#ifdef USE_GSM
 		gs.active_channel == 4 ? ( // for SMS
@@ -114,15 +115,21 @@ String shared_menu(const String &text) {
 			"/help - это меню"
 		);
     }
-	if (text == "/status") {
+	if (is_command(text, "status")) {
 		char buf[100];
 		String uptime = String(getUptime(buf));
 		String power = "";
+		String temperature = "";
 		#ifdef PIN_5V
 			if( battery.per ) {
 				power = (fl_5v ? "Power is ON :) b:" + String(battery.per) + "%\n": "Power is OFF :( b:" + String(battery.per) + "%\n");
 			} else
 				power = String(fl_5v ? "Power is ON :)\n": "Power is OFF :(\n");
+		#endif
+		#ifdef USE_AHTx0
+			float t, h;
+			getTemperature(t, h);
+			temperature = "t: " + String(t, 1) + "'C, h: " + String(h, 1) + "%\n";			
 		#endif
 		#ifdef USE_GSM
 		if (gsm.isSleep) gsm_wake();
@@ -138,25 +145,25 @@ String shared_menu(const String &text) {
 			"GSM info: " + gsm.info + "\n"
 			"Signal: "   + gsm.rssi + " dBm\n" +
 		#endif
-			power + "Uptime: " + uptime + slaves
+			power + temperature + "Uptime: " + uptime + slaves
 		);
 	}
-	if (text == "/slave")
+	if (is_command(text, "slave"))
 		return switchActiveChannel(ActiveChannel::hub);
-	if (text == "/wifi")
+	if (is_command(text, "wifi"))
 		return switchActiveChannel(ActiveChannel::wifi);
 	#ifdef USE_GSM
-	if (text == "/gprs")
+	if (is_command(text, "gprs"))
 		return switchActiveChannel(ActiveChannel::gprs);
-	if (text == "/sms")
+	if (is_command(text, "sms"))
 		return switchActiveChannel(ActiveChannel::sms);
-	if (text == "/unread_sms") {
+	if (is_command(text, "unread_sms")) {
 		if (gsm.isSleep) gsm_wake();
 		requestAllSMS();
 		return "Все SMS прочитаны";
 	}
 	#endif
-	if (text == "/active") {
+	if (is_command(text, "active")) {
 		const char *ch[] = {"none", "hub", "telegram/WiFi", "telegram/GPRS", "SMS"};
 		return "active channel: " + String(gs.active_channel) + " - " + ch[gs.active_channel];
 	}
@@ -184,7 +191,7 @@ String shared_menu(const String &text) {
 		String pn = (t < 0) ? text.substring(f+1): text.substring(f,t);
 		return switchActiveChannel(pn.length() < 1 ? 100: pn.toInt());
 	}
-	if (text == "/pumps") // отправка сообщения с текущим статусом полива
+	if (is_command(text, "pumps")) // отправка сообщения с текущим статусом полива
 		return print_pumps_status();
 	if (isDigit(text[0])) {
 		// запрос внешнего датчика
@@ -231,7 +238,7 @@ String shared_menu(const String &text) {
 			return "датчик неактивен";
 		}
 	}
-	if (text == "/schedule") { // вывод текущего расписания
+	if (is_command(text, "schedule")) { // вывод текущего расписания
 		String all_sh = "schedule:";
 		for (uint8_t i=0; i<SCHEDULES; i++) {
 			all_sh += print_schedule(i);
