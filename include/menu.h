@@ -19,6 +19,7 @@
 #ifdef USE_GSM
 #include "gsmApi.h"
 #endif
+#include <StringConverters.h>
 
 
 // вывод текущего статуса и статистики по насосам и датчикам влажности
@@ -85,6 +86,20 @@ String print_schedule(uint8_t i) {
 //   Общее меню как для команд из WEB (hub), так и из телеграм, или SMS
 // ────────────────────────────────────────────────────────────────────────────────
 String shared_menu(const String &text) {
+	if (is_command(text, "sch_help")) { // справка по изменению расписания
+		return (
+			"eN - изменить ячейку N\n"
+			"HH:MM - время срабатывания\n"
+			"(HH:MM) - интервал повтора\n"
+			"xN - количество порций\n"
+			"pN - насос N (0 для всех)\n"
+			"sN - использовать сенсор N\n"
+			"s без номера - среднее\n"
+			"< или > - условие\n"
+			"noif или = - отключить условие\n"
+			"on или off - влючить или выключить"
+		);
+	}
     if (is_command(text, "help")) { // справка
 		return
 		#ifdef USE_GSM
@@ -100,6 +115,7 @@ String shared_menu(const String &text) {
 			(
 			"/status - состояние устройства\n"
 			"/schedule - расписание\n"
+			"/sch_help - как менять расписание\n"
 			"/slave - переключится на хаб\n"
 			"/wifi - переключится на WiFi\n"
 			#ifdef USE_GSM
@@ -210,11 +226,11 @@ String shared_menu(const String &text) {
 				if (!fl_free_cmd && pos2>0) {
 					url += text.substring(pos,pos2+1);
 					if(pos2+1 < len)
-						url += urlEncode(text.substring(pos2+1), true);
+						url += StringConverters::urlEncode(text.substring(pos2+1), true);
 				} else {
 					if (fl_free_cmd || text[pos] == '/')
 						url += F("cmd=");
-					url += urlEncode(text.substring(pos));
+					url += StringConverters::urlEncode(text.substring(pos));
 					if (text[pos] != '/' && !fl_free_cmd)
 						url += "=";
 				}
@@ -299,9 +315,9 @@ String shared_menu(const String &text) {
 				if (is_init) {
 					if (token.indexOf(':') != -1) {
 						if (token.startsWith("(")) { // время начала
-							ss->r = decode_time(token.substring(1));
+							ss->r = StringConverters::text_to_time(token.substring(1));
 						} else { // период повтора
-							ss->t = decode_time(token);
+							ss->t = StringConverters::text_to_time(token);
 						}
 					} else if (token.startsWith("p")) { // все насосы
 						ss->s = 0;

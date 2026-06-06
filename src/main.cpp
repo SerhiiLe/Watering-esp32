@@ -38,19 +38,19 @@ Pump_State ps[PUMPS]; // состояние насосов и статистик
 	#endif
 #endif
 
-blinkMinim led(PIN_LED, LOW);
+BlinkMinim led(PIN_LED, LOW);
 #ifdef PIN_LED_GREEN
 blinkMinim ledGreen;
 #endif
 
-timerMinim ntpSyncTimer(3600000U * gs.sync_time_period);  // Таймер синхронизации времени с NTP-сервером 3600000U
-timerMinim hubRegTimer(60000U * gs.hub_period); // Таймер перерегистрации на hub (часах)
-timerMinim ntpRetry(5000); // паузы для повторного опроса NTP сервера
-timerMinim seconds(1000); // секундный интервал для разных целей
-timerMinim telegramTimer(1000U * gs.tb_accelerated); // период опроса команд из Телеграм
-timerMinim saveStateTimer(300000); // записывать состояние каждые 5 минут
+TimerMinim ntpSyncTimer(3600000U * gs.sync_time_period);  // Таймер синхронизации времени с NTP-сервером 3600000U
+TimerMinim hubRegTimer(60000U * gs.hub_period); // Таймер перерегистрации на hub (часах)
+TimerMinim ntpRetry(5000); // паузы для повторного опроса NTP сервера
+TimerMinim seconds(1000); // секундный интервал для разных целей
+TimerMinim telegramTimer(1000U * gs.tb_accelerated); // период опроса команд из Телеграм
+TimerMinim saveStateTimer(300000); // записывать состояние каждые 5 минут
 #ifdef USE_SHIFT_REGISTER
-timerMinim forceUpdateSR(1000); // интервал принудительного обновления сдвигового регистра
+TimerMinim forceUpdateSR(1000); // интервал принудительного обновления сдвигового регистра
 #endif
 
 // файловая система подключена

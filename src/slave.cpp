@@ -9,6 +9,7 @@
 #include <ESPmDNS.h>
 #include "defines.h"
 #include "slave.h"
+#include <StringConverters.h>
 
 // Создание объектов для отправки запросов.
 WiFiClient client;
@@ -34,48 +35,6 @@ IPAddress resolve_ip(const char *resolveName) {
 	return ip;
 }
 
-// кодирование строки для GET запросов
-String urlEncode(const char *str, bool params) {
-	size_t len = strlen(str);
-	int buffer_size = len * 3 < TELEGRAM_MAX_LENGTH ? len * 3: TELEGRAM_MAX_LENGTH;
-	char* encodedString = (char*) malloc(buffer_size * sizeof(char));
-	char* p = encodedString;
-	char c;
-	char code0;
-	char code1;
-	for(unsigned int i=0; i < len; i++) {
-		if(buffer_size+encodedString-p < 3) break;
-		c=str[i];
-		if(params && (c == '&' || c == '=')) {
-			*p++ = c;
-		} else
-		if(isalnum(c)) {
-			*p++ = c;
-		} else {
-			code1=(c & 0xf)+'0';
-			if((c & 0xf) > 9) {
-				code1 = (c & 0xf) - 10 + 'A';
-			}
-			c = (c>>4) & 0xf;
-			code0 = c+'0';
-			if(c > 9) {
-				code0=c - 10 + 'A';
-			}
-			*p++ = '%';
-			*p++ = code0;
-			*p++ = code1;
-		}
-	}
-	*p = 0;
-	String result = String(encodedString);
-	free(encodedString);
-	return result;
-}
-// кодирование строки для GET запросов
-String urlEncode(String str, bool params) {
-	return urlEncode(str.c_str(), params);
-}
-
 // определение адреса хаба и регистрация на нём
 bool registration_dev() {
 	if (gs.hub_name.length() < 1) return false; // нет имени - нет регистрации
@@ -91,7 +50,7 @@ bool registration_dev() {
 		return false;
 	}
 
-	String serverPath = "http://" + hub_ip.toString() + "/registration?pin=" + gs.hub_pin + "&name=" + urlEncode(gs.host_name);
+	String serverPath = "http://" + hub_ip.toString() + "/registration?pin=" + gs.hub_pin + "&name=" + StringConverters::urlEncode(gs.host_name);
 
 	// Your Domain name with URL path or IP address with path
 	http.begin(client, serverPath);
@@ -127,7 +86,7 @@ bool tb_send_msg(const char *msg) {
 
 	bool success = true;
 	String serverPath = "http://" + hub_ip.toString() + "/send";
-	String httpRequestData = "pin=" + gs.hub_pin + "&msg=" + urlEncode(msg);
+	String httpRequestData = "pin=" + gs.hub_pin + "&msg=" + StringConverters::urlEncode(msg);
 	LOG(println,serverPath);
 	LOG(println,httpRequestData);
 	http.begin(client, serverPath);

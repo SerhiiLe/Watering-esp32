@@ -153,15 +153,15 @@ extern cur_slave slave[];
 
 //----------------------------------------------------
 
-#include "timerMinim.hpp"
+#include <TimerMinim.h>
 
-extern timerMinim ntpSyncTimer;
-extern timerMinim hubRegTimer;
-extern timerMinim telegramTimer;
+extern TimerMinim ntpSyncTimer;
+extern TimerMinim hubRegTimer;
+extern TimerMinim telegramTimer;
 
-#include "blinkMinim.hpp"
+#include <BlinkMinim.h>
 
-extern blinkMinim led;
+extern BlinkMinim led;
 
 //----------------------------------------------------
 #if defined(LOG)

@@ -18,17 +18,18 @@
 #include "ntp.h"
 #include "wifi_init.h"
 #include "slave.h"
-#include "blinkMinim.hpp"
 #include "pump.hpp"
 #include "gsm.h"
 #ifdef USE_AHTx0
 #include "temperature.h"
 #endif
+#include <WebServerUtils.h>
 
 #define HPP(txt, ...) HTTP.client().printf(txt, __VA_ARGS__)
 
 WebServer HTTP(80);
 HTTPUpdateServer httpUpdater;
+WebServerUtils<WebServer> web(HTTP);
 bool web_isStarted = false;
 
 void save_settings();
@@ -52,7 +53,6 @@ void registration();
 void send();
 
 bool fileSend(String path);
-bool need_save = false;
 bool fl_mdns = false;
 
 cur_slave slave[MAX_SLAVES];
@@ -179,119 +179,12 @@ bool fileSend(String path) {
 	// проверка необходимости авторизации
 	if(auth_need(path))
 		if(is_no_auth()) return false;
-	// определение типа файла
-	const char *ct = nullptr;
-	if(path.endsWith(".html")) ct = "text/html";
-	else if(path.endsWith(".css")) ct = "text/css";
-	else if(path.endsWith(".js")) ct = "application/javascript";
-	else if(path.endsWith(".json")) ct = "application/json";
-	else if(path.endsWith(".png")) ct = "image/png";
-	else if(path.endsWith(".jpg")) ct = "image/jpeg";
-	else if(path.endsWith(".gif")) ct = "image/gif";
-	else if(path.endsWith(".ico")) ct = "image/x-icon";
-	else ct = "text/plain";
-	// открытие файла на чтение
 	if(!fs_isStarted) {
 		// файловая система не загружена, переход на страничку обновления
-		HPP("HTTP/1.1 200\r\nContent-Type: %s\r\nContent-Length: 80\r\nConnection: close\r\n\r\n<html><body><h1><a href='/update'>File system not exist!</a></h1></body></html>", ct);
+		HTTP.client().print("HTTP/1.1 200\r\nContent-Type: text/html\r\nContent-Length: 80\r\nConnection: close\r\n\r\n<html><body><h1><a href='/update'>File system not exist!</a></h1></body></html>");
 		return true;
 	}
-	if(LittleFS.exists(path)) {
-		File file = LittleFS.open(path, "r");
-		// файл существует и открыт, выделение буфера передачи и отсылка заголовка
-		char buf[1476];
-		size_t sent = 0;
-		int siz = file.size();
-		HPP("HTTP/1.1 200\r\nContent-Type: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n", ct, siz);
-		// отсылка файла порциями, по размеру буфера или остаток
-		while(siz > 0) {
-			size_t len = std::min((int)(sizeof(buf) - 1), siz);
-			file.read((uint8_t *)buf, len);
-			HTTP.client().write((const char*)buf, len);
-			siz -= len;
-			sent+=len;
-		}
-		file.close();  
-	} else return false; // файла нет, ошибка
-	return true;
-}
-
-// декодирование времени, заданного в поле input->time
-uint16_t decode_time(String s) {
-	// выделение часов и минут из строки вида 00:00
-	size_t pos = s.indexOf(":");
-	uint8_t h = constrain(s.toInt(), 0, 23);
-	uint8_t m = constrain(s.substring(pos+1).toInt(), 0, 59);
-	return h*60 + m;
-}
-
-/****** шаблоны простых операций для выделения переменных из web ******/
-
-// определение выбран checkbox или нет
-bool set_simple_checkbox(const char * name, uint8_t &var) {
-	if ( HTTP.hasArg(name) ) {
-		if ( var == 0 ) {
-			var = 1;
-			need_save = true;
-			return true;
-		}
-	} else {
-		if ( var > 0 ) {
-			var = 0;
-			need_save = true;
-			return true;
-		}
-	}
-	return false;
-}
-// определение простых целых чисел
-template <typename T>
-bool set_simple_int(const char * name, T &var, long from, long to) {
-	if ( HTTP.hasArg(name) ) {
-		if ( HTTP.arg(name).toInt() != (long)var ) {
-			var = constrain(HTTP.arg(name).toInt(), from, to);
-			need_save = true;
-			LOG(printf,"web int: %s change\n",name);
-			return true;
-		}
-	}
-	return false;
-}
-// определение дробных чисел
-bool set_simple_float(const char * name, float &var, float from, float to, float prec=8.0f) {
-	if ( HTTP.hasArg(name) ) {
-		if ( round(HTTP.arg(name).toFloat()*pow(10.0f,prec)) != round(var*pow(10.0f,prec)) ) {
-			var = constrain(HTTP.arg(name).toFloat(), from, to);
-			need_save = true;
-			LOG(printf,"web float: %s change\n",name);
-			return true;
-		}
-	}
-	return false;
-}
-// определение простых строк
-bool set_simple_string(const char * name, String &var) {
-	if ( HTTP.hasArg(name) ) {
-		if( HTTP.arg(name) != var ) {
-			var = HTTP.arg(name);
-			var.trim();
-			need_save = true;
-			LOG(printf,"web string: %s change\n",name);
-			return true;
-		}
-	}
-	return false;
-}
-// определение времени
-bool set_simple_time(const char * name, uint16_t &var) {
-	if ( HTTP.hasArg(name) ) {
-		if ( decode_time(HTTP.arg(name)) != var ) {
-			var = decode_time(HTTP.arg(name));
-			need_save = true;
-			return true;
-		}
-	}
-	return false;
+	return web.fileSend(path);
 }
 
 /****** обработка разных запросов ******/
@@ -299,27 +192,27 @@ bool set_simple_time(const char * name, uint16_t &var) {
 // сохранение настроек
 void save_settings() {
 	if (is_no_auth()) return;
-	need_save = false;
+	web.need_save = false;
 
-	if ( set_simple_string("host_name", gs.host_name) )
+	if ( web.to_string("host_name", gs.host_name) )
 		if(fl_mdns)	MDNS.setInstanceName(gs.host_name);
-	set_simple_checkbox("blink_g", gs.blink_g);
+	web.checkbox("blink_g", gs.blink_g);
 
 		bool sync_time = false;
-	if ( set_simple_int("tz_shift", gs.tz_shift, -12, 12) )
+	if ( web.to_int("tz_shift", gs.tz_shift, -12, 12) )
 		sync_time = true;
-	if ( set_simple_checkbox("tz_dst", gs.tz_dst) )
+	if ( web.checkbox("tz_dst", gs.tz_dst) )
 		sync_time = true;
-	if ( set_simple_int("sync_time_period", gs.sync_time_period, 1, 255) )
+	if ( web.to_int("sync_time_period", gs.sync_time_period, 1, 255) )
 		ntpSyncTimer.setInterval(3600000U * gs.sync_time_period);
 
-	set_simple_int("high_v", gs.high_v, 0, 4095);
-	set_simple_int("low_v", gs.low_v, 0, 4095);
+	web.to_int("high_v", gs.high_v, 0, 4095);
+	web.to_int("low_v", gs.low_v, 0, 4095);
 
 	// set_simple_int("msec_in_ml", gs.msec_in_ml, 100, 65000);
-	set_simple_int("doze", gs.doze, 10, 255);
+	web.to_int("doze", gs.doze, 10, 255);
 
-	set_simple_int("active_channel", gs.active_channel, ActiveChannel::none,
+	web.to_int("active_channel", gs.active_channel, ActiveChannel::none,
 		#ifdef USE_GSM
 		ActiveChannel::sms
 		#else
@@ -328,44 +221,44 @@ void save_settings() {
 	);
 
 	bool need_registration = false;
-	if ( set_simple_string("hub_name", gs.hub_name) )
+	if ( web.to_string("hub_name", gs.hub_name) )
 		need_registration = true;
-	if ( set_simple_string("hub_pin", gs.hub_pin) )
+	if ( web.to_string("hub_pin", gs.hub_pin) )
 		need_registration = true;
-	if ( set_simple_int("hub_period", gs.hub_period, 1, 255) )
+	if ( web.to_int("hub_period", gs.hub_period, 1, 255) )
 		hubRegTimer.setInterval(60000U * gs.hub_period);
-	set_simple_string("slave_pin", gs.slave_pin);
-	set_simple_int("slave_timeout", gs.slave_timeout, 1, 255);
+	web.to_string("slave_pin", gs.slave_pin);
+	web.to_int("slave_timeout", gs.slave_timeout, 1, 255);
 
 	bool fl_setTelegram = false;
-	set_simple_string("tb_name", gs.tb_name);
-	if ( set_simple_string("tb_chats", gs.tb_chats) )
+	web.to_string("tb_name", gs.tb_name);
+	if ( web.to_string("tb_chats", gs.tb_chats) )
 		fl_setTelegram = true;
-	if ( set_simple_string("tb_token", gs.tb_token) )
+	if ( web.to_string("tb_token", gs.tb_token) )
 		fl_setTelegram = true;
-	if ( set_simple_int("tb_rate", gs.tb_rate, 0, 3600) && last_telegram == 0 )
+	if ( web.to_int("tb_rate", gs.tb_rate, 0, 3600) && last_telegram == 0 )
 		telegramTimer.setInterval(1000U * gs.tb_rate);
-	set_simple_int("tb_accelerated", gs.tb_accelerated, 1, 600);
-	set_simple_int("tb_accelerate", gs.tb_accelerate, 1, 3600);
-	set_simple_int("tb_ban", gs.tb_ban, 120, 3600);
+	web.to_int("tb_accelerated", gs.tb_accelerated, 1, 600);
+	web.to_int("tb_accelerate", gs.tb_accelerate, 1, 3600);
+	web.to_int("tb_ban", gs.tb_ban, 120, 3600);
 
-	set_simple_string("sms_phone", gs.sms_phone);
-	set_simple_string("pin_code", gs.pin_code);
-	set_simple_string("gprs_apn", gs.gprs_APN);
-	set_simple_string("gprs_user", gs.gprs_user);
-	set_simple_string("gprs_pass", gs.gprs_pass);
+	web.to_string("sms_phone", gs.sms_phone);
+	web.to_string("pin_code", gs.pin_code);
+	web.to_string("gprs_apn", gs.gprs_APN);
+	web.to_string("gprs_user", gs.gprs_user);
+	web.to_string("gprs_pass", gs.gprs_pass);
 
 	bool need_web_restart = false;
-	if ( set_simple_string("web_login", gs.web_login) )
+	if ( web.to_string("web_login", gs.web_login) )
 		need_web_restart = true;
-	if ( set_simple_string("web_password", gs.web_password) )
+	if ( web.to_string("web_password", gs.web_password) )
 		need_web_restart = true;
 
 	HTTP.sendHeader("Location","maintenance.html");
 	HTTP.send(303);
 	delay(1);
-	LOG(printf, "save_settings need_save=%i\n", need_save);
-	if (need_save) save_config_main();
+	LOG(printf, "save_settings need_save=%i\n", web.need_save);
+	if (web.need_save) save_config_main();
 	if (sync_time) syncTime();
 	if (need_web_restart) httpUpdater.setup(&HTTP, gs.web_login, gs.web_password);
 	if (need_registration) registration_dev();
@@ -667,41 +560,41 @@ void moisture_json() {
 // сохранение настроек датчиков влажности
 void save_moisture() {
 	if(is_no_auth()) return;
-	need_save = false;
+	web.need_save = false;
 
 	char buf[20];
 	for(uint8_t i=0; i<SENSORS; i++) {
 		sprintf(buf,"moi0_%u",i);
-		set_simple_int(buf, mc[i].moi0, 0, 4095);
+		web.to_int(buf, mc[i].moi0, 0, 4095);
 		sprintf(buf,"moi100_%u",i);
-		set_simple_int(buf, mc[i].moi100, 0, 4095);
+		web.to_int(buf, mc[i].moi100, 0, 4095);
 	}
 
 	HTTP.sendHeader("Location","moisture.html");
 	HTTP.send(303);
 	delay(1);
-	LOG(printf, "save_moisture need_save=%i\n", need_save);
-	if( need_save ) save_moisture_calibration();
+	LOG(printf, "save_moisture need_save=%i\n", web.need_save);
+	if( web.need_save ) save_moisture_calibration();
 }
 
 // сохранить калибровку насосов
 void save_pump() {
 	if(is_no_auth()) return;
-	need_save = false;
+	web.need_save = false;
 
-	set_simple_int("pump", pc.pump, 1, PUMPS);
-	set_simple_int("sec1", pc.sec1, 1, 255);
-	set_simple_float("tara", pc.tara, 1, 1e6, 2.0f);
-	set_simple_float("weight1", pc.weight1, 1, 1e6, 2.0f);
-	set_simple_float("weight2", pc.weight2, 1, 1e6, 2.0f);
-	set_simple_int("in_ms", pc.in_ms, 1, 65000);
-	set_simple_int("empty_ms", pc.empty_ms, 1, 65000);
+	web.to_int("pump", pc.pump, 1, PUMPS);
+	web.to_int("sec1", pc.sec1, 1, 255);
+	web.to_float("tara", pc.tara, 1, 1e6, 2.0f);
+	web.to_float("weight1", pc.weight1, 1, 1e6, 2.0f);
+	web.to_float("weight2", pc.weight2, 1, 1e6, 2.0f);
+	web.to_int("in_ms", pc.in_ms, 1, 65000);
+	web.to_int("empty_ms", pc.empty_ms, 1, 65000);
 
 	HTTP.sendHeader("Location","pump.html");
 	HTTP.send(303);
 	delay(1);
-	LOG(printf, "save_pump need_save=%i\n", need_save);
-	if( need_save ) save_pump_calibration();
+	LOG(printf, "save_pump need_save=%i\n", web.need_save);
+	if( web.need_save ) save_pump_calibration();
 }
 
 extern PumpWater p[];
@@ -828,29 +721,13 @@ cm биты
 
 void schedule_save() {
 	if(is_no_auth()) return;
-	need_save = false;
+	web.need_save = false;
 	uint8_t target = 0;
 	String name = "target";
 	if( HTTP.hasArg(name) ) {
 		target = HTTP.arg(name).toInt();
-		name = "time";
-		if( HTTP.hasArg(name) ) {
-			// выделение часов и минут из строки вида 00:00
-			uint16_t time = decode_time(HTTP.arg(name));
-			if( schedule[target].t != time ) {
-				schedule[target].t = time;
-				need_save = true;
-			}
-		}
-		name = "repeat";
-		if( HTTP.hasArg(name) ) {
-			// выделение часов и минут из строки вида 00:00
-			uint16_t time = decode_time(HTTP.arg(name));
-			if( schedule[target].r != time ) {
-				schedule[target].r = time;
-				need_save = true;
-			}
-		}
+		web.time("time", schedule[target].t);
+		web.time("repeat", schedule[target].r);
 		uint8_t settings = 128;
 		name = F("mode");
 		if( HTTP.hasArg(name) ) settings |= constrain(HTTP.arg(name).toInt(), 0, 3) << 5;
@@ -858,10 +735,10 @@ void schedule_save() {
 		if( HTTP.hasArg(name) ) settings |= constrain(HTTP.arg(name).toInt(), 0, 31); // max 31
 		if( settings != schedule[target].cm ) {
 			schedule[target].cm = settings;
-			need_save = true;
+			web.need_save = true;
 		}
-		set_simple_int("moi", schedule[target].cv, 0, 100);
-		set_simple_int("por", schedule[target].p, 0, 255);
+		web.to_int("moi", schedule[target].cv, 0, 100);
+		web.to_int("por", schedule[target].p, 0, 255);
 		uint8_t pumps = 0;
 		char buf[20];
 		for(uint8_t i=0; i<PUMPS; i++) {
@@ -870,7 +747,7 @@ void schedule_save() {
 		}
 		if( pumps != schedule[target].s ) {
 			schedule[target].s = pumps;
-			need_save = true;
+			web.need_save = true;
 		}
 		// LOG(printf, "schedule: t=%u, r=%u, cm=%u, cv=%u, p=%u, s=%u, need_save=%i\n",
 		// 	schedule[target].t, schedule[target].r, schedule[target].cm, schedule[target].cv, schedule[target].p, schedule[target].s, need_save);
@@ -878,7 +755,7 @@ void schedule_save() {
 	HTTP.sendHeader("Location", "schedule.html");
 	HTTP.send(303);
 	delay(1);
-	if( need_save ) save_schedules();
+	if( web.need_save ) save_schedules();
 }
 
 void schedule_off() {

@@ -47,8 +47,8 @@ struct SMS_Queue {
 };
 SMS_Queue sms_q;
 
-timerMinim gsmLazyTimer(10000); // таймер для отсчёта промежутков по 10 секунд, для проверки состояния модема
-timerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания
+TimerMinim gsmLazyTimer(10000); // таймер для отсчёта промежутков по 10 секунд, для проверки состояния модема
+TimerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания
 
 #ifdef USE_GSM
 
