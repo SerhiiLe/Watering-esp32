@@ -28,7 +28,7 @@ void getTemperature(float &temperature, float &humidity) {
 	if(!fl_AHTIsInit) return;
     sensors_event_t _humidity, _temperature;
     aht.getEvent(&_humidity, &_temperature);
-    temperature = _temperature.temperature;
+    temperature = _temperature.temperature + gs.temp_cor;
     humidity = _humidity.relative_humidity;
 }
 

@@ -46,6 +46,7 @@ bool load_config_main() {
 
 	gs.host_name = doc["host_name"].as<String>();
 	gs.blink_g = doc["blink_g"];
+	gs.temp_cor = doc["temp_cor"];
 	
 	gs.tz_shift = doc["tz_shift"];
 	gs.tz_dst = doc["tz_dst"];
@@ -93,6 +94,7 @@ void save_config_main() {
 
 	doc["host_name"] = gs.host_name;
 	doc["blink_g"] = gs.blink_g;
+	doc["temp_cor"] = gs.temp_cor;
 	
 	doc["tz_shift"] = gs.tz_shift;
 	doc["tz_dst"] = gs.tz_dst;

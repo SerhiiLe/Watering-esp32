@@ -22,6 +22,7 @@ enum ActiveChannel {
 struct Global_Settings {
 	String host_name = "water"; // название устройства в локальной сети, по умолчанию.
 	uint8_t blink_g = 1; // моргать зелёным светодиодом (heartbeat)
+	float temp_cor = 0.0f; // коррекция температуры 
 
 	int8_t tz_shift = TIMEZONE; // временная зона, смещение локального времени относительно Гринвича (часы)
 	uint8_t tz_dst = DSTSHIFT; // смещение летнего времени (часы)
@@ -60,8 +61,8 @@ struct Global_Settings {
 extern Global_Settings gs;
 
 struct Moisture_Calibrate {
-	uint16_t moi0 = 950;
-	uint16_t moi100 = 2500;
+	uint16_t moi0 = 2600;
+	uint16_t moi100 = 960;
 };
 extern Moisture_Calibrate mc[];
 

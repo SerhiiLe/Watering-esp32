@@ -197,6 +197,7 @@ void save_settings() {
 	if ( web.to_string("host_name", gs.host_name) )
 		if(fl_mdns)	MDNS.setInstanceName(gs.host_name);
 	web.checkbox("blink_g", gs.blink_g);
+	web.to_float("temp_cor", gs.temp_cor, -20.0, +20.0, 1);
 
 		bool sync_time = false;
 	if ( web.to_int("tz_shift", gs.tz_shift, -12, 12) )
@@ -633,6 +634,7 @@ void full_status() {
 	JsonDocument doc;
 
 	doc["hostname"] = gs.host_name.c_str();
+	doc["is_auth"] = HTTP.authenticate(gs.web_login.c_str(), gs.web_password.c_str()) && gs.web_password.length() > 0 ? 1 : 0;
 	#ifdef USE_AHTx0
 		float temp = 0.0f, hum = 0.0f;
 		getTemperature(temp, hum);

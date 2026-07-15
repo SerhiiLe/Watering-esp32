@@ -40,7 +40,7 @@ Pump_State ps[PUMPS]; // состояние насосов и статистик
 
 BlinkMinim led(PIN_LED, LOW);
 #ifdef PIN_LED_GREEN
-blinkMinim ledGreen;
+BlinkMinim ledGreen;
 #endif
 
 TimerMinim ntpSyncTimer(3600000U * gs.sync_time_period);  // Таймер синхронизации времени с NTP-сервером 3600000U
@@ -200,7 +200,7 @@ void sensors_calc() {
 	for(uint8_t i=0; i<SENSORS; i++) {
 		moi[i].raw = moi[i].sum/moi_count;
 		moi[i].sum = 0;
-		moi[i].per = map(moi[i].raw, mc[i].moi0, mc[i].moi100, 0, 100);
+		moi[i].per = map(constrain(moi[i].raw, mc[i].moi100, mc[i].moi0), mc[i].moi100, mc[i].moi0, 100, 0);
 		moi[i].per = constrain(moi[i].per, 0, 100);
 	}
 	// вычисление заряда батареи
@@ -294,7 +294,7 @@ void loop() {
 				} else {
 					// for(uint8_t i=0; i<PUMPS; i++)
 					// 	p[0].stop();
-					sendMessage("My name is " + gs.host_name);
+					sendMessage("My name is " + gs.host_name + ", IP: http://" + wifi_currentIP());
 					#ifdef PIN_LED_GREEN
 					if (ledGreen.state()) 
 						ledGreen.blink(OFF);
