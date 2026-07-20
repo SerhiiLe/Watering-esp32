@@ -17,6 +17,8 @@ WiFiManager wm;
 bool wifi_isConnected = false;
 bool wifi_isPortal = false;
 String wifi_message = "";
+unsigned long last_portal_start = 0;
+TimerMinim timerNextTryToConnect(5 * 60000UL);
 
 void wifi_setup() {
 	WiFi.setHostname(gs.host_name.c_str());
@@ -37,15 +39,25 @@ void wifi_setup() {
 }
 
 void wifi_process() {
+	// проверка, прошло ли время на активацию портала, еcли да, то отключить.
+	if (last_portal_start && wm.getWiFiIsSaved() && millis() - last_portal_start > 5 * 60000UL) {
+		wifi_startConfig(false);
+		last_portal_start = 0;
+	}
 	if(WiFi.status() == WL_CONNECTED) {
 		if( ! wifi_isConnected ) {
 			wifi_isConnected = true;
 			LOG(println, PSTR("WiFi now is connected"));
+			led.blink(OFF);
 		}
 	} else {
 		if( wifi_isConnected ) {
 			wifi_isConnected = false;
 			LOG(println, PSTR("No WiFi now"));
+			led.blink(ON,500,0,10);
+		} else {
+			if(wm.getWiFiIsSaved() && timerNextTryToConnect.isReady())
+				wifi_startConfig(false);
 		}
 		wm.process();
 	}
@@ -72,6 +84,7 @@ void wifi_startConfig(bool fl) {
 		wm.startConfigPortal(SSID);
 		LOG(println, PSTR("ConfigPortal is started"));
 		wifi_isPortal = true;
+		last_portal_start = millis();
 	} else {
 		if(wm.getWiFiIsSaved()) {
 			WiFi.begin(wm.getWiFiSSID(),wm.getWiFiPass());
