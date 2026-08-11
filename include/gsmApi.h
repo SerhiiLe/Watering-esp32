@@ -146,10 +146,10 @@ void decodeSMS(const char* pduLine) {
 
         char buff[300];
         sprintf(buff,"SMS\nОт: %s\nВремя: %s\nТекст: %s", pdu.getSender(), pdu.getTimeStamp(), pdu.getText());
-        if (gs.active_channel != sms)
+        if (gs.active_channel != ActiveChannel::sms)
             sendMessage(buff);
         if (isWhitelisted(pdu.getSender(), gs.sms_phone))
-            shared_menu(pdu.getText());
+            sendMessage(shared_menu(pdu.getText()));
 
     } else
         LOG(println, "[SMS] Ошибка PDU");

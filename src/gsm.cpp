@@ -136,6 +136,7 @@ void setup2() {
 
 	#endif
 
+	switchActiveChannel(gs.active_channel);
 	setup_telegram();
 	sendMessage("hello :) " + gs.host_name);
 
@@ -146,14 +147,14 @@ void setup2() {
 void messagePool() {
 	// сначала обработка входящих
 	// затем проверка очереди сообщений на отправку
-	// но в начале надо поставить из основной очереди в кеш сообщение для отправки, если есть
+	// но в начале надо поставить из основной очереди в кеш сообщение для отправки, если есть и кеш пуст
 	if (!sms_q.active && xQueueReceive(strQueue, &received, 0) == pdPASS) {
 		if (received) {
 			vTaskDelay(10);
 			LOG(printf, "To send: %s\n", received);
 			sms_q.txt = String(received);
 			sms_q.active = true;
-			free(received);               // ОБЯЗАТЕЛЬНО освобождаем! free() / vPortFree(received)
+			free(received);               // ОБЯЗАТЕЛЬНО освобождаем! free(received) / vPortFree(received)
 		}
 	}
 	// проверка, не закончилось ли время бана при сбое опроса телеграм
@@ -182,7 +183,7 @@ void messagePool() {
 	if (gsm.isInit) {
 		if ( gsm.isSleep && digitalRead(PIN_gsmRING) == LOW ) {
 			LOG(println, "DTR LOW");
-			// похоже пришол звонок. будим модем если надо и уходим на новый цикл в надежде поймать RING
+			// похоже пришёл звонок. будим модем если надо и уходим на новый цикл в надежде поймать RING
 			gsm_wake();
 			fl_call = true;
 			callStart = millis();
@@ -196,11 +197,11 @@ void messagePool() {
 			// в этом месте могут появится только данные, которые не касаются инициализации, настроек, работы GPRS.
 			// по этому надо прочесть всю строку, чтобы понять, что хотел сказать модем
 			// и попутно ставится флаг fl_call для блокировки обращений к gprs
-			checkGsm();
+			checkGsm(); // непосредственно обработка звонков и SMS
 			gsmSleepTimer.reset();
 			return;
 		}
-		if (gs.active_channel == gprs ) { // канал через GSM/GPRS
+		if (gs.active_channel == ActiveChannel::gprs) { // канал через GSM/GPRS
 			if (!disable_telegram) { 
 				if (!fl_call && telegramTimer.isReady()) { // пришло время проверить сообщения в телеграм
 					LOG(println, "new message request");
@@ -209,13 +210,13 @@ void messagePool() {
 					gsmSleepTimer.reset();
 					return;
 				}
-				if (sms_q.active) {
+				if (sms_q.active) { // если в кеше отправки есть сообщение то отправить
 					vTaskDelay(30);
-					if (tg.sendMessage(sms_q.txt)) sms_q.active = false;
+					if (tg.sendMessage(sms_q.txt)) sms_q.active = false; // если отправка успешна, то очистить кеш
 				}
 			}
 		}
-		if (gs.active_channel == sms && sms_q.active) { // канал SMS, только отправка, работает на приём нестабильно
+		if (gs.active_channel == ActiveChannel::sms && sms_q.active) { // канал SMS, только отправка, На приём работает код "available" выше.
 			LOG(printf, "number for send: %s", extractFirstNumber(gs.sms_phone).c_str());
 			if( modem.sendSMS(extractFirstNumber(gs.sms_phone), sms_q.txt) ) sms_q.active = false;
 			gsmSleepTimer.reset();
@@ -238,9 +239,9 @@ void messagePool() {
 	}
 	#endif
 
-	// секция опроса новых сообщений из не GSM
+	// секция опроса новых сообщений не из GSM
 	if (!gs.active_channel) return; // нет канала для уведомлений
-	if (gs.active_channel == wifi) { // канал через wifi
+	if (gs.active_channel == ActiveChannel::wifi) { // канал через wifi
 		if (!disable_telegram) { 
 			if (telegramTimer.isReady())
 				if (tg.checkMessage(true) < 0 ) disable_telegram = getTimeU();
@@ -250,7 +251,7 @@ void messagePool() {
 			}
 		}
 	}
-	if (gs.active_channel == hub) { // канал через wifi и hub
+	if (gs.active_channel == ActiveChannel::hub) { // канал через wifi и hub
 		// только отправка сообщений. Приём через web.cpp / slave.cpp
 		if (sms_q.active)
 			if (tb_send_msg(sms_q.txt)) sms_q.active = false;
@@ -264,7 +265,7 @@ void messagePool() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────────
-//   Обработка поступивших вхядящих команд из разных источников
+//   Обработка поступивших входящих команд из разных источников
 // ────────────────────────────────────────────────────────────────────────────────
 
 // переключение активного канала
@@ -280,7 +281,7 @@ String switchActiveChannel(uint8_t ch) {
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
 				fl_gprs = false;
-				gs.active_channel = hub;
+				gs.active_channel = ActiveChannel::hub;
 				result = "Канал переключен на Hub";
 			}
 			break;
@@ -290,7 +291,7 @@ String switchActiveChannel(uint8_t ch) {
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
 				fl_gprs = false;
-				gs.active_channel = wifi;
+				gs.active_channel = ActiveChannel::wifi;
 				result = "Канал переключен на WiFi";
 			}
 			break;
@@ -302,7 +303,7 @@ String switchActiveChannel(uint8_t ch) {
 			} else {
 				securePresentationLayer.setClient(&gsmTransportLayer);
 				fl_gprs = true;
-				gs.active_channel = gprs;
+				gs.active_channel = ActiveChannel::gprs;
 				result = "Канал переключен на GPRS";
 			}
 			break;

@@ -98,7 +98,7 @@ void wifi_startConfig(bool fl) {
 	}
 }
 
-void foget_wifi() {
-	LOG(println, "Foget WiFi settings!");
+void forget_wifi() {
+	LOG(println, "Forget WiFi settings!");
 	wm.resetSettings(); // Удаляет сохраненные настройки
 }

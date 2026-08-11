@@ -303,7 +303,7 @@ void maintence() {
 			fl_reboot = true;
 		}
 		if (HTTP.arg("t") == "96") { // всё, включая настройки wifi
-			foget_wifi();
+			forget_wifi();
     		File root = LittleFS.open("/");
 			if (root) {
 			    if (root.isDirectory()) {

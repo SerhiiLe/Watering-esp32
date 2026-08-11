@@ -195,7 +195,7 @@ void sensors_update() {
 }
 
 void sensors_calc() {
-	if( moi_count == 0 ) sensors_update(); // ещё небыло опросов - опросить в первый раз
+	if( moi_count == 0 ) sensors_update(); // ещё не было опросов - опросить в первый раз
 	// датчик влажности
 	for(uint8_t i=0; i<SENSORS; i++) {
 		moi[i].raw = moi[i].sum/moi_count;
@@ -340,7 +340,7 @@ void loop() {
 
 	// всё, что может обновляться лениво, с секундным интервалом
 	if( seconds.isReady() ) {
-		// вычисление средних показаний датчиков влажности / заяда батареи
+		// вычисление средних показаний датчиков влажности / заряда батареи
 		sensors_calc();
 
 
@@ -425,7 +425,8 @@ void loop() {
 					pq[i].active = false;
 					pq[i].seconds = 0;
 					ps[i].count++;
-					ps[i].vol += float(calc_msec-pc.empty_ms) / float(pc.in_ms) / 1000;
+					float vol_add = float(calc_msec-pc.empty_ms) / float(pc.in_ms) / 1000;
+					if(vol_add>0) ps[i].vol += vol_add;
 					fl_need_save_state = true;
 					saveStateTimer.reset();
 					break; // выйти, так как в одно время должен быть запущен только один насос (блок питания больше не потянет)
@@ -447,8 +448,8 @@ static void TaskGSMCode( void * pvParameters ) {
 	LOG(print, "TaskGSMCode running on core ");
 	LOG(println, xPortGetCoreID());
 	vTaskDelay(1);
-	// Стандартный watchdog срабатывет через 5 секунд, а ответ от модема иногда приходится ждать 10-15 секнуд
-	// по этому увеличение до 20 секнд для этой задачи
+	// Стандартный watchdog срабатывает через 5 секунд, а ответ от модема иногда приходится ждать 10-15 секунд
+	// по этому увеличение до 20 секунд для этой задачи
 	esp_task_wdt_init(20, true);
 	// esp_task_wdt_config_t config = { .timeout_ms = 20000, .trigger_panic = false };
 	// esp_task_wdt_reconfigure(&config);
