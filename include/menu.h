@@ -59,7 +59,7 @@ String print_schedule(uint8_t i) {
 	// количество порций
 	if (schedule[i].p > 1)
 		out += " x" + String(schedule[i].p);
-	// список задействованых насосов
+	// список задействованных насосов
 	if (schedule[i].s == (1U<<PUMPS)-1)
 		out += " pAll";
 	else
@@ -97,13 +97,13 @@ String shared_menu(const String &text) {
 			"s без номера - среднее\n"
 			"< или > - условие\n"
 			"noif или = - отключить условие\n"
-			"on или off - влючить или выключить"
+			"on или off - включить или выключить"
 		);
 	}
     if (is_command(text, "help")) { // справка
 		return
 		#ifdef USE_GSM
-		gs.active_channel == 4 ? ( // for SMS
+		gs.active_channel == ActiveChannel::sms ? ( // for SMS
 			"/status\n"
 			"8*n — switch to channel n\n"
 			"/active — active channel\n"

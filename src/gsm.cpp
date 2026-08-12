@@ -136,7 +136,7 @@ void setup2() {
 
 	#endif
 
-	switchActiveChannel(gs.active_channel);
+	switchActiveChannel(gs.active_channel, true);
 	setup_telegram();
 	sendMessage("hello :) " + gs.host_name);
 
@@ -216,7 +216,7 @@ void messagePool() {
 				}
 			}
 		}
-		if (gs.active_channel == ActiveChannel::sms && sms_q.active) { // канал SMS, только отправка, На приём работает код "available" выше.
+		if (gs.active_channel == ActiveChannel::sms && sms_q.active) { // канал SMS, только отправка, На приём работает код "available" выше. Не работает вместе с GPRS
 			LOG(printf, "number for send: %s", extractFirstNumber(gs.sms_phone).c_str());
 			if( modem.sendSMS(extractFirstNumber(gs.sms_phone), sms_q.txt) ) sms_q.active = false;
 			gsmSleepTimer.reset();
@@ -269,14 +269,15 @@ void messagePool() {
 // ────────────────────────────────────────────────────────────────────────────────
 
 // переключение активного канала
-String switchActiveChannel(uint8_t ch) {
+String switchActiveChannel(uint8_t ch, bool force) {
 	String result;
 	uint8_t old_channel = gs.active_channel;
 	switch (ch) {
 		case ActiveChannel::none: // ничего не отсылать
+			gs.active_channel = ActiveChannel::none;
 			break;
 		case ActiveChannel::hub: // отправка через Hub
-			if ( WiFi.status() != WL_CONNECTED ) {
+			if ( WiFi.status() != WL_CONNECTED || force ) {
 				result = "Не получилось переключится: WiFi отключен";
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
@@ -286,7 +287,7 @@ String switchActiveChannel(uint8_t ch) {
 			}
 			break;
 		case ActiveChannel::wifi: // отправка через telegram и WiFi
-			if ( WiFi.status() != WL_CONNECTED ) {
+			if ( WiFi.status() != WL_CONNECTED || force ) {
 				result = "Не получилось переключится: WiFi отключен";
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
@@ -298,7 +299,7 @@ String switchActiveChannel(uint8_t ch) {
 		#ifdef USE_GSM
 		case ActiveChannel::gprs: // отправка через telegram и GPRS
 			if (gsm.isSleep) gsm_wake();
-			if ( ! gprs_check() ) {
+			if ( ! gprs_check() || force ) {
 				result = "Не получилось переключится: GPRS отключен";
 			} else {
 				securePresentationLayer.setClient(&gsmTransportLayer);
@@ -309,7 +310,7 @@ String switchActiveChannel(uint8_t ch) {
 			break;
 		case ActiveChannel::sms: // отправка через SMS
 			if (gsm.isSleep) gsm_wake();
-			if ( ! gsm_check() ) {
+			if ( ! gsm_check() || force ) {
 				result = "Не получилось переключится: GSM отключен";
 			} else {
 				securePresentationLayer.setClient(&gsmTransportLayer);
