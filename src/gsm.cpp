@@ -277,7 +277,7 @@ String switchActiveChannel(uint8_t ch, bool force) {
 			gs.active_channel = ActiveChannel::none;
 			break;
 		case ActiveChannel::hub: // отправка через Hub
-			if ( WiFi.status() != WL_CONNECTED || force ) {
+			if ( WiFi.status() != WL_CONNECTED && ! force ) {
 				result = "Не получилось переключится: WiFi отключен";
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
@@ -287,7 +287,7 @@ String switchActiveChannel(uint8_t ch, bool force) {
 			}
 			break;
 		case ActiveChannel::wifi: // отправка через telegram и WiFi
-			if ( WiFi.status() != WL_CONNECTED || force ) {
+			if ( WiFi.status() != WL_CONNECTED && ! force ) {
 				result = "Не получилось переключится: WiFi отключен";
 			} else {
 				securePresentationLayer.setClient(&webTransportLayer);
@@ -299,7 +299,7 @@ String switchActiveChannel(uint8_t ch, bool force) {
 		#ifdef USE_GSM
 		case ActiveChannel::gprs: // отправка через telegram и GPRS
 			if (gsm.isSleep) gsm_wake();
-			if ( ! gprs_check() || force ) {
+			if ( ! gprs_check() && ! force ) {
 				result = "Не получилось переключится: GPRS отключен";
 			} else {
 				securePresentationLayer.setClient(&gsmTransportLayer);
@@ -310,7 +310,7 @@ String switchActiveChannel(uint8_t ch, bool force) {
 			break;
 		case ActiveChannel::sms: // отправка через SMS
 			if (gsm.isSleep) gsm_wake();
-			if ( ! gsm_check() || force ) {
+			if ( ! gsm_check() && ! force ) {
 				result = "Не получилось переключится: GSM отключен";
 			} else {
 				securePresentationLayer.setClient(&gsmTransportLayer);
