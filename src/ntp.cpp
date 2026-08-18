@@ -79,6 +79,14 @@ const char* getTimeDateU(char *str, time_t ut) {
 	return str;
 }
 
+// только текущее время, без даты
+String getTimeOnly() {
+	tm t = getTime();
+	char str[9];
+	sprintf_P(str, PSTR("%02u:%02u:%02u"), t.tm_hour, t.tm_min, t.tm_sec);
+	return String(str);
+}
+
 /*
 // Convert struct tm to time_t
   time_t t = mktime(&timeinfo);

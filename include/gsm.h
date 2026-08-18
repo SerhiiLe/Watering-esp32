@@ -8,7 +8,7 @@ void setup2();
 void setup_telegram();
 
 String switchActiveChannel(uint8_t ch, bool force=false);
-String shared_menu(const String &text);
+String shared_menu(const String &text, bool sms=false);
 String print_pumps_status();
 String print_decoded_time(int t);
 

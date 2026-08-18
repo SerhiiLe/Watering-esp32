@@ -44,14 +44,17 @@ bool registration_dev() {
 
 	// найти адрес хаба
 	hub_ip = resolve_ip((gs.hub_name).c_str());
+	xSemaphoreGive(xMutex);
+
 	// если хаб не найден, то выйти. Может быть найдётся в следующем цикле
 	if(hub_ip == INADDR_NONE) {
-		xSemaphoreGive(xMutex);
 		return false;
 	}
+	vTaskDelay(1);
 
 	String serverPath = "http://" + hub_ip.toString() + "/registration?pin=" + gs.hub_pin + "&name=" + StringConverters::urlEncode(gs.host_name);
-
+	
+	xSemaphoreTake(xMutex, portMAX_DELAY);
 	// Your Domain name with URL path or IP address with path
 	http.begin(client, serverPath);
 
@@ -60,6 +63,7 @@ bool registration_dev() {
 
 	// Send HTTP GET request
 	int httpResponseCode = http.GET();
+	xSemaphoreGive(xMutex);
 
 	bool success = true;
 	if (httpResponseCode > 0) {
@@ -72,7 +76,6 @@ bool registration_dev() {
 	}
 	// Free resources
 	http.end();
-	xSemaphoreGive(xMutex);
 	return success;
 }
 
@@ -83,6 +86,7 @@ bool tb_send_msg(const char *msg) {
 	if(hub_ip == INADDR_NONE) return false;
 	
 	xSemaphoreTake(xMutex, portMAX_DELAY);
+	vTaskDelay(1);
 
 	bool success = true;
 	String serverPath = "http://" + hub_ip.toString() + "/send";
@@ -92,7 +96,7 @@ bool tb_send_msg(const char *msg) {
 	http.begin(client, serverPath);
 	http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 	int httpResponseCode = http.POST(httpRequestData);
-		if (httpResponseCode > 0) {
+	if (httpResponseCode > 0) {
 		String payload = http.getString();
 		if(payload.charAt(0) != '1') success = false;
 		LOG(printf, "HTTP Response code: %u, payload: %s\n", httpResponseCode, payload);
@@ -103,6 +107,7 @@ bool tb_send_msg(const char *msg) {
 	// Free resources
 	http.end();
 	xSemaphoreGive(xMutex);
+
 	return success;
 }
 // отсылка сообщений в телеграм через хаб

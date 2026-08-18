@@ -7,5 +7,6 @@ tm getTime(time_t *t = nullptr);
 const char* getUptime(char *str);
 const char* getTimeDate(char *str);
 const char* getTimeDateU(char *str, time_t ut);
+String getTimeOnly();
 
 #endif

@@ -59,6 +59,8 @@ bool fs_isStarted = false;
 bool fl_password_reset_req = false;
 // флаг наличия питания
 bool fl_5v = true;
+// счётчик для задержки срабатывания датчика 5V
+unsigned long last_5v = 0;
 // напряжение на аккумуляторе
 Average battery;
 // влажность
@@ -325,15 +327,18 @@ void loop() {
 
 	#ifdef PIN_5V
 	if(digitalRead(PIN_5V) != fl_5v) {
-		delay(50); // проверка на случайную помеху. Резисторы стоят сильно большие и случайные наводки могут давать сбой логики.
-		if(digitalRead(PIN_5V) != fl_5v) {
-			fl_5v = ! fl_5v;
-			// отослать sms об изменении состояния питания
-			if( battery.per == 0 ) sensors_calc();
-			if( battery.per ) {
-				sendMessage(fl_5v ? "Power is ON :) b:" + String(battery.per) + "%": "Power is OFF :( b:" + String(battery.per) + "%");
-			} else
-				sendMessage(fl_5v ? "Power is ON :)": "Power is OFF :(");
+		if (last_5v == 0) last_5v = millis(); // цикл проверки начинается
+		if (millis() - last_5v > 200) { // проверка на случайную помеху. Резисторы стоят сильно большие и случайные наводки могут давать сбой логики.
+			if(digitalRead(PIN_5V) != fl_5v) {
+				fl_5v = ! fl_5v;
+				// отослать sms об изменении состояния питания
+				if( battery.per == 0 ) sensors_calc();
+				String msg = getTimeOnly() + " Power is " + String(fl_5v ? "ON :)": "OFF :(");
+				if( battery.per )
+					msg += " b:" + String(battery.per) + "%";
+				sendMessage(msg);
+			}
+			last_5v = 0; // цикл проверки завершен
 		}
 	}
 	#endif

@@ -148,9 +148,12 @@ void decodeSMS(const char* pduLine) {
         sprintf(buff,"SMS\nОт: %s\nВремя: %s\nТекст: %s", pdu.getSender(), pdu.getTimeStamp(), pdu.getText());
         if (gs.active_channel != ActiveChannel::sms)
             sendMessage(buff);
-        if (isWhitelisted(pdu.getSender(), gs.sms_phone))
-            sendMessage(shared_menu(pdu.getText()));
-
+        if (isWhitelisted(pdu.getSender(), gs.sms_phone)) {
+            String text = pdu.getText();
+            text.toLowerCase();
+            vTaskDelay(1);
+            modem.sendSMS(pdu.getSender(), shared_menu(text, true)); // моментальный ответ на номер отправителя
+        }
     } else
         LOG(println, "[SMS] Ошибка PDU");
 }
@@ -203,6 +206,7 @@ void requestAllSMS() {
         if ( t < 0 ) break;
         requestSMS(all_indexes.substring(f,t).toInt());
         f = t+1;
+        vTaskDelay(1);
     }
 }
 
@@ -247,7 +251,7 @@ void checkGsm() {
                 fl_dtmf = true;
                 return;
             } else { 
-                LOG(println, "[CALL] Не в списке → ATH");
+                LOG(println, "[CALL] Не в списке -> ATH");
                 modem.sendAT("H");               // сброс немедленно, без задачи
                 modem.waitResponse();
                 callerNumber = "";

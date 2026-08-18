@@ -85,7 +85,7 @@ String print_schedule(uint8_t i) {
 // ────────────────────────────────────────────────────────────────────────────────
 //   Общее меню как для команд из WEB (hub), так и из телеграм, или SMS
 // ────────────────────────────────────────────────────────────────────────────────
-String shared_menu(const String &text) {
+String shared_menu(const String &text, bool sms) {
 	if (is_command(text, "sch_help")) { // справка по изменению расписания
 		return (
 			"eN - изменить ячейку N\n"
@@ -103,11 +103,12 @@ String shared_menu(const String &text) {
     if (is_command(text, "help")) { // справка
 		return
 		#ifdef USE_GSM
-		gs.active_channel == ActiveChannel::sms ? ( // for SMS
+		gs.active_channel == ActiveChannel::sms || sms ? ( // for SMS
 			"/status\n"
-			"8*n — switch to channel n\n"
-			"/active — active channel\n"
-			"1*n — water the plant n\n"
+			"/schedule\n"
+			"8*n - switch to channel n\n"
+			"/active - active channel\n"
+			"1*n - water the plant n (1*n*c)\n"
 			"/pumps\n"
 			"/help"
 		) : 
@@ -125,7 +126,7 @@ String shared_menu(const String &text) {
 			#endif
 			"/active - приоритетный канал\n"
 			"/chatid - показать ChatID\n"
-            "1*n — включить насос n\n"
+            "1*n - включить насос n (1*n*c)\n"
 			"/pumps - состояние насосов\n"
 			"8*n - переключить канал сообщений n\n"
 			"/help - это меню"
@@ -184,18 +185,22 @@ String shared_menu(const String &text) {
 		return "active channel: " + String(gs.active_channel) + " - " + ch[gs.active_channel];
 	}
 	if (text.startsWith("1*")) { // запуск насоса (1*n где n=0 - все насосы, n=X - насос номер X)
-		int f = text.lastIndexOf("*");
+		int f = text.indexOf("*");
 		int t = text.indexOf("#");
-		String pn = (t < 0) ? text.substring(f+1): text.substring(f,t);
+		int f2 = text.substring(f+1).indexOf("*");
+		int need = f2 < 0 ? 1: text.substring(f+f2+2).toInt();
+		if (need == 0) need = 1; // если третий параметр "количество порций" пустой, то всё равно 1
+		// такой сложный алгоритм получения номера насоса, что-бы гарантировать получение номера
+		String pn = f2 > 0 ? text.substring(f+1,f+f2+1): t < 0 ? text.substring(f+1): text.substring(f+1,t);
 		if (pn.length() < 1) return "unknown pump";
 		int a = pn.toInt();
 		bool fl = false;
 		if( a >= 1 && a <= PUMPS ) {
-			pq[a-1].need = 1;
+			pq[a-1].need = need;
 			pq[a-1].active = true;
 		} else if( a == 0 ) {
 			for(uint8_t ii=0; ii<PUMPS; ii++) {
-				pq[ii].need = 1;
+				pq[ii].need = need;
 				pq[ii].active = true;
 			}
 		}
@@ -238,8 +243,11 @@ String shared_menu(const String &text) {
 			LOG(println, url);
 			WiFiClient client;
 			HTTPClient html;
+			vTaskDelay(1);
+			xSemaphoreTake(xMutex, portMAX_DELAY);
 			html.begin(client, url.c_str());
 			int httpResponseCode = html.GET();
+			xSemaphoreGive(xMutex);
 			String res;
 			if (httpResponseCode == 200) {
 				// ответ от датчика запихивается сразу в telegram, обработку делает FastBot
@@ -251,7 +259,7 @@ String shared_menu(const String &text) {
 			html.end();
 			return res;
 		} else {
-			return "датчик неактивен";
+			return "sensor is inactive";
 		}
 	}
 	if (is_command(text, "schedule")) { // вывод текущего расписания

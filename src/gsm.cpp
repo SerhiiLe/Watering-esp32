@@ -48,7 +48,8 @@ struct SMS_Queue {
 SMS_Queue sms_q;
 
 TimerMinim gsmLazyTimer(10000); // таймер для отсчёта промежутков по 10 секунд, для проверки состояния модема
-TimerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания
+TimerMinim gsmSleepTimer(30000); // таймер для отсчёта времени до засыпания, 30 секунд
+TimerMinim gsmCheckSMS(120000); // таймер для принудительного опроса новых SMS, 2 минуты
 
 #ifdef USE_GSM
 
@@ -127,12 +128,14 @@ void setup2() {
 	// Reset pin high
 	digitalWrite(PIN_gsmRST, HIGH);
 
-	// // Initialize SIM800. Как показала практика hard reset 99% не нужен.
-	// LOG(println, "Initializing modem...");
-	// while( !modem.begin() ) {
-	// 	LOG(println, "hard reset :(");
-	// 	hardResetModem();
-	// }
+	// Initialize SIM800. Как показала практика hard reset 99% не нужен.
+	if( digitalRead(PIN_gsmRING) == HIGH ) {
+		LOG(println, "Initializing modem...");
+		if (!modem.begin()) {
+			LOG(println, "hard reset :(");
+			hardResetModem();
+		}
+	}
 
 	#endif
 
@@ -181,7 +184,7 @@ void messagePool() {
 	// LOG(print, gsm.isInit);
 	// секция ожидания чего-то входящего от GSM. Это может быть или звонок или SMS, для всего остального инициатор микроконтроллер
 	if (gsm.isInit) {
-		if ( gsm.isSleep && digitalRead(PIN_gsmRING) == LOW ) {
+		if (gsm.isSleep && digitalRead(PIN_gsmRING) == LOW) {
 			LOG(println, "DTR LOW");
 			// похоже пришёл звонок. будим модем если надо и уходим на новый цикл в надежде поймать RING
 			gsm_wake();
@@ -189,7 +192,7 @@ void messagePool() {
 			callStart = millis();
 			return; // выход после каждого блока для сброса watchdog timer
 		}
-		if ( gsmSerial.available() > 0 ) {
+		if (gsmSerial.available() > 0) {
 			LOG(println, "Serial available");
 			// в этом месте данные могут появится только если пришел звонок. Или случайный мусор.
 			fl_call = true;
@@ -210,19 +213,31 @@ void messagePool() {
 					gsmSleepTimer.reset();
 					return;
 				}
-				if (sms_q.active) { // если в кеше отправки есть сообщение то отправить
+				if (!fl_call && sms_q.active) { // если в кеше отправки есть сообщение то отправить
+					if (gsm.isSleep) gsm_wake();
 					vTaskDelay(30);
 					if (tg.sendMessage(sms_q.txt)) sms_q.active = false; // если отправка успешна, то очистить кеш
+					return;
 				}
 			}
 		}
-		if (gs.active_channel == ActiveChannel::sms && sms_q.active) { // канал SMS, только отправка, На приём работает код "available" выше. Не работает вместе с GPRS
+		if (!fl_dtmf && !fl_call && gsmCheckSMS.isReady()) { // принудительная проверка новых SMS
+			// к сожалению нет надёжного способа определить приход SMS в аппаратном спящем режиме.
+			// DTR четко работает только во время прихода звонка. По этому, если SMS пришло тогда, когда
+			// GSM в состоянии сна, то оно будет пропущено, хотя и сохранится во внутренней памяти. 	
+			if (gsm.isSleep) gsm_wake();
+			gsmSleepTimer.reset();
+			requestAllSMS(); // проверить, есть ли SMS
+			return;
+		}
+		if (gs.active_channel == ActiveChannel::sms && sms_q.active) { // канал SMS, только отправка, На приём работает код "available" выше.
 			LOG(printf, "number for send: %s", extractFirstNumber(gs.sms_phone).c_str());
 			if( modem.sendSMS(extractFirstNumber(gs.sms_phone), sms_q.txt) ) sms_q.active = false;
 			gsmSleepTimer.reset();
+			return;
 		}
 		// если модем не спит, ничем не занят, и прошло 10 секунд, то обновить информацию о модеме
-		if( !fl_dtmf && !fl_call && ! gsm.isSleep && gsmLazyTimer.isReady() ) {
+		if( !fl_dtmf && !fl_call && !gsm.isSleep && gsmLazyTimer.isReady() ) {
 			gsm.info = modem.getModemInfo();
 			gsm.rssi = modem.getSignalQuality();
 			// SIM800RegStatus gsm_registrationStatus
@@ -235,7 +250,9 @@ void messagePool() {
 			}
 		}
 
-		if ( !fl_dtmf && millis() - callStart > 10000L ) fl_call = false;
+		if ( !fl_dtmf && millis() - callStart > 10000L ) {
+			if (fl_call) fl_call = false;
+		}
 	}
 	#endif
 
@@ -379,16 +396,18 @@ String handleMessage(TResult &t) {
 		} else
 			return "format:\npin n\nn=0..9";
 	}
-	if (is_command(t.text, "start"))
+	if (is_command(t.text, "start") || is_command(t.text, "menu"))
 		return (
 			"Hi, " + t.from + "!\n\n"
 			"/chatid - show ChatID\n"
+			"/menu - show menu\n"
+			"/hide - hide menu\n"
 			"/help - show help" + String(start_menu)
 		);
-	if (is_command(t.text, "stop"))
+	if (is_command(t.text, "stop") || is_command(t.text, "hide"))
 		return (
-			"start - show menu\n"
-			"stop - remove menu\n"
+			"start / menu - show menu\n"
+			"stop / hide - remove menu\n"
 			"[MENU]"
 		);
 	if (is_command(t.text, "chatid"))
